@@ -68,18 +68,19 @@ if [[ ! -f /etc/wireguard/node_private.key ]]; then
     chmod 600 /etc/wireguard/node_private.key
 fi
 
+NODE_IP="${NODE_IP:-10.200.0.2}"
 NODE_PRIVATE_KEY=$(cat /etc/wireguard/node_private.key)
 NODE_PUBLIC_KEY=$(cat /etc/wireguard/node_public.key)
 
 # 4. Create Node WireGuard Configuration with Split-Tunneling & Policy Routing
 cat << EOF > /etc/wireguard/wg0.conf
 [Interface]
-Address = 10.200.0.2/24
+Address = $NODE_IP/24
 PrivateKey = $NODE_PRIVATE_KEY
 
 # Policy routing: Game response packets for incoming tunnel traffic route back through Gateway
-PostUp = ip rule add from 10.200.0.2 table 200 || true; ip route add default via 10.200.0.1 dev %i table 200 || true
-PostDown = ip rule del from 10.200.0.2 table 200 || true; ip route del default via 10.200.0.1 dev %i table 200 || true
+PostUp = ip rule add from $NODE_IP table 200 || true; ip route add default via 10.200.0.1 dev %i table 200 || true
+PostDown = ip rule del from $NODE_IP table 200 || true; ip route del default via 10.200.0.1 dev %i table 200 || true
 
 [Peer]
 PublicKey = $GW_PUBLIC_KEY
@@ -93,12 +94,12 @@ systemctl enable --now wg-quick@wg0
 systemctl restart wg-quick@wg0
 
 echo "=========================================================="
-echo " [✓] WireNet Node tunnel is ACTIVE!"
+echo " [✓] WireNet Node tunnel is ACTIVE! (Node IP: $NODE_IP)"
 echo "=========================================================="
 echo ""
 echo " FINAL STEP: Run this SINGLE command on your Gateway VPS"
 echo " to authorize this Node:"
 echo ""
-echo " sudo wg set wg0 peer $NODE_PUBLIC_KEY allowed-ips 10.200.0.2/32"
+echo " sudo wg set wg0 peer $NODE_PUBLIC_KEY allowed-ips $NODE_IP/32"
 echo ""
 echo "=========================================================="
