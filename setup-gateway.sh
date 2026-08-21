@@ -37,13 +37,15 @@ echo "[+] Applying kernel packet forwarding and network optimizations..."
 cat << 'EOF' > /etc/sysctl.d/99-wirenet.conf
 net.ipv4.ip_forward = 1
 net.ipv4.conf.all.forwarding = 1
+net.ipv4.conf.all.rp_filter = 2
+net.ipv4.conf.default.rp_filter = 2
 net.ipv4.tcp_syncookies = 1
 net.ipv4.tcp_max_syn_backlog = 65536
 net.core.somaxconn = 65535
 net.ipv4.tcp_tw_reuse = 1
 net.ipv4.tcp_fin_timeout = 15
 EOF
-sysctl --system >/dev/null 2>&1 || sysctl -w net.ipv4.ip_forward=1
+sysctl --system >/dev/null 2>&1 || sysctl -w net.ipv4.ip_forward=1 net.ipv4.conf.all.rp_filter=2
 
 # 3. Detect Primary Network Interface
 DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1)
@@ -72,13 +74,15 @@ ListenPort = 51820
 PrivateKey = $GW_PRIVATE_KEY
 
 # Forwarding Rules (DNAT without Masquerading -> Real Player IPs Preserved!)
+PostUp = iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT
 PostUp = iptables -t nat -A PREROUTING -i $DEFAULT_IFACE -p tcp -m multiport --dports 25565:25600,30000:40000 -j DNAT --to-destination 10.200.0.2
 PostUp = iptables -t nat -A PREROUTING -i $DEFAULT_IFACE -p udp -m multiport --dports 25565:25600,30000:40000 -j DNAT --to-destination 10.200.0.2
 
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT
-PostDown = iptables -t nat -D PREROUTING -i $DEFAULT_IFACE -p tcp -m multiport --dports 25565:25600,30000:40000 -j DNAT --to-destination 10.200.0.2
-PostDown = iptables -t nat -D PREROUTING -i $DEFAULT_IFACE -p udp -m multiport --dports 25565:25600,30000:40000 -j DNAT --to-destination 10.200.0.2
+PostDown = iptables -D FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+PostDown = iptables -D FORWARD -i %i -j ACCEPT 2>/dev/null || true; iptables -D FORWARD -o %i -j ACCEPT 2>/dev/null || true
+PostDown = iptables -t nat -D PREROUTING -i $DEFAULT_IFACE -p tcp -m multiport --dports 25565:25600,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
+PostDown = iptables -t nat -D PREROUTING -i $DEFAULT_IFACE -p udp -m multiport --dports 25565:25600,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
 EOF
 
 # 6. Apply Minecraft Anti-DDoS Filter Chains
