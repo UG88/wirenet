@@ -92,6 +92,7 @@ PrivateKey = $NODE_PRIVATE_KEY
 # Forwarding and Connection-Tracking Routing:
 # Marks traffic coming from the tunnel and routes reply packets back through Gateway
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT
+PostUp = iptables -t nat -A PREROUTING -i %i -d $NODE_IP -j DNAT --to-destination 127.0.0.1 2>/dev/null || true
 PostUp = iptables -t mangle -A PREROUTING -i %i -j CONNMARK --set-mark 1
 PostUp = iptables -t mangle -A PREROUTING -m connmark --mark 1 -j CONNMARK --restore-mark
 PostUp = iptables -t mangle -A OUTPUT -m connmark --mark 1 -j CONNMARK --restore-mark
