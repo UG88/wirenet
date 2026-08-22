@@ -63,6 +63,14 @@ iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
 iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true
 
+# Block direct public access on eth0 so backend Node IP is 100% hidden
+DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1 || echo "eth0")
+iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
+iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
+
+iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
+iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
+
 # Ensure Docker outbound MASQUERADE for Mojang auth & DNS
 iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true

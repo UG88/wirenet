@@ -185,9 +185,17 @@ for port in $(seq 30000 30050); do
     echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
 done
 
-# 9. Clean conflicting iptables PREROUTING rules and ensure Docker MASQUERADE
+# 9. Clean conflicting iptables PREROUTING rules and shield backend Node from direct public access
 iptables -t nat -F PREROUTING 2>/dev/null || true
 iptables -t mangle -F 2>/dev/null || true
+
+# Block direct internet access on eth0 to game ports so backend IP is 100% HIDDEN & INVISIBLE
+DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1 || echo "eth0")
+iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
+iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
+
+iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
+iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
 
 # Ensure Docker containers can reach Outbound Internet (Mojang Auth & DNS)
 iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
