@@ -108,16 +108,14 @@ else
         for container in $(docker ps -q 2>/dev/null || true); do
             c_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container" 2>/dev/null || true)
             if [[ -n "$c_ip" ]]; then
-                for port_mapping in $(docker port "$container" 2>/dev/null || true); do
-                    h_port=$(echo "$port_mapping" | awk -F: '{print $NF}' | tr -d ' ')
-                    c_port=$(echo "$port_mapping" | awk -F/ '{print $1}' | tr -d ' ')
-                    if [[ "$h_port" =~ ^[0-9]+$ ]]; then
-                        echo "  [+] Direct Bridge: wg0:${h_port} ──► ${c_ip}:${c_port} (Pure Real IP)"
-                        iptables -t nat -D PREROUTING -i wg0 -p tcp --dport "$h_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
-                        iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport "$h_port" -j DNAT --to-destination "${c_ip}:${c_port}"
+                for c_port in $(docker inspect -f '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} {{end}}' "$container" 2>/dev/null | tr ' ' '\n' | awk -F/ '{print $1}' | sort -u || true); do
+                    if [[ "$c_port" =~ ^[0-9]+$ && "$c_port" -ge 1024 && "$c_port" -le 65535 ]]; then
+                        echo "  [+] Direct Bridge: wg0:${c_port} ──► ${c_ip}:${c_port} (Pure Real IP)"
+                        iptables -t nat -D PREROUTING -i wg0 -p tcp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
+                        iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}"
 
-                        iptables -t nat -D PREROUTING -i wg0 -p udp --dport "$h_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
-                        iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport "$h_port" -j DNAT --to-destination "${c_ip}:${c_port}"
+                        iptables -t nat -D PREROUTING -i wg0 -p udp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
+                        iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}"
                     fi
                 done
             fi

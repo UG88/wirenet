@@ -21,21 +21,19 @@ sync_container_routes() {
             continue
         fi
 
-        # Find all port allocations for this container
-        for port_mapping in $(docker port "$container" 2>/dev/null || true); do
-            local host_port
-            host_port=$(echo "$port_mapping" | awk -F: '{print $NF}' | tr -d ' ')
-            local container_port
-            container_port=$(echo "$port_mapping" | awk -F/ '{print $1}' | tr -d ' ')
+        # Find all exposed container ports using docker inspect
+        local ports
+        ports=$(docker inspect -f '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} {{end}}' "$container" 2>/dev/null | tr ' ' '\n' | awk -F/ '{print $1}' | sort -u || true)
 
-            if [[ "$host_port" =~ ^[0-9]+$ ]]; then
+        for c_port in $ports; do
+            if [[ "$c_port" =~ ^[0-9]+$ && "$c_port" -ge 1024 && "$c_port" -le 65535 ]]; then
                 # Direct TCP Kernel DNAT to container IP (Bypasses docker-proxy & preserves Real Player IP!)
-                iptables -t nat -D PREROUTING -i wg0 -p tcp --dport "$host_port" -j DNAT --to-destination "${c_ip}:${container_port}" 2>/dev/null || true
-                iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport "$host_port" -j DNAT --to-destination "${c_ip}:${container_port}"
+                iptables -t nat -D PREROUTING -i wg0 -p tcp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
+                iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}"
 
                 # Direct UDP Kernel DNAT
-                iptables -t nat -D PREROUTING -i wg0 -p udp --dport "$host_port" -j DNAT --to-destination "${c_ip}:${container_port}" 2>/dev/null || true
-                iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport "$host_port" -j DNAT --to-destination "${c_ip}:${container_port}"
+                iptables -t nat -D PREROUTING -i wg0 -p udp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
+                iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}"
             fi
         done
     done
