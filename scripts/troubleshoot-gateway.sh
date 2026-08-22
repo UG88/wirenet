@@ -47,8 +47,9 @@ iptables -I FORWARD 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/de
 iptables -I FORWARD 1 -i "$DEFAULT_IFACE" -o wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -i wg0 -o "$DEFAULT_IFACE" -j ACCEPT 2>/dev/null || true
 
-# Pure transparent DNAT without SNAT on wg0 -> preserves genuine client IP
+# Apply MASQUERADE on wg0 and public interface for symmetric, unbreakable TCP routing
 iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
+iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
 iptables -t nat -D POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE
 
