@@ -64,7 +64,7 @@ fi
 
 GW_PRIVATE_KEY=$(cat /etc/wireguard/gateway_private.key)
 GW_PUBLIC_KEY=$(cat /etc/wireguard/gateway_public.key)
-PUBLIC_IP=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || echo "YOUR_GATEWAY_PUBLIC_IP")
+PUBLIC_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || curl -s -4 --connect-timeout 2 -m 2 ifconfig.me 2>/dev/null || echo "127.0.0.1")
 
 # 5. Create WireGuard Configuration
 cat << EOF > /etc/wireguard/wg0.conf

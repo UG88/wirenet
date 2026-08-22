@@ -45,7 +45,7 @@ EOF
 sysctl --system >/dev/null 2>&1 || sysctl -w net.ipv4.ip_forward=1 net.ipv4.conf.all.route_localnet=1 net.ipv4.conf.all.rp_filter=2
 
 # 3. Detect Node Public IP
-PRIMARY_IP=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || ip route get 1.1.1.1 | awk '{print $7; exit}')
+PRIMARY_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || curl -s -4 --connect-timeout 2 -m 2 ifconfig.me 2>/dev/null || echo "127.0.0.1")
 echo "[+] Detected Node Host IP: $PRIMARY_IP"
 
 # 4. Interactive Node Number Selector

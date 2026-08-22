@@ -17,7 +17,7 @@ fi
 
 DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1)
 DEFAULT_IFACE="${DEFAULT_IFACE:-eth0}"
-PUBLIC_IP=$(curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || echo "UNKNOWN")
+PUBLIC_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || curl -s -4 --connect-timeout 2 -m 2 ifconfig.me 2>/dev/null || echo "127.0.0.1")
 
 echo "[1/5] Checking Gateway Kernel Forwarding..."
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
