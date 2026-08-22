@@ -17,15 +17,17 @@ use tui::TuiDashboard;
 #[derive(Parser)]
 #[command(name = "wirenet")]
 #[command(author = "UG88 <untilgamer888@gmail.com>")]
-#[command(version = "0.1.0")]
+#[command(version = "2.0.0")]
 #[command(about = "High-Performance WireNet Tunnel & Anti-DDoS Daemon for Game Servers")]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Start WireNet Daemon (Auto-detects Gateway or Node role)
+    Run,
     /// Setup WireNet WireGuard Tunnel & Services
     Setup {
         #[command(subcommand)]
@@ -137,7 +139,27 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Setup { sub } => match sub {
+        None => {
+            // Default when running 'wirenet' with no args -> Launch Dashboard
+            TuiDashboard::run()?;
+        }
+        Some(Commands::Run) => {
+            let is_gateway = std::fs::read_to_string("/etc/wireguard/wg0.conf")
+                .map(|c| c.contains("10.200.0.1/24"))
+                .unwrap_or(false)
+                || std::path::Path::new("/etc/wireguard/gateway_private.key").exists();
+
+            if is_gateway {
+                let config = GatewayConfig::default();
+                let gateway = Arc::new(GatewayServer::new(config));
+                gateway.run().await?;
+            } else {
+                let config = NodeConfig::default();
+                let agent = Arc::new(NodeAgent::new(config));
+                agent.run().await?;
+            }
+        }
+        Some(Commands::Setup { sub }) => match sub {
             SetupCommands::Gateway { start_port, end_port } => {
                 SetupManager::setup_gateway(start_port, end_port)?;
             }
@@ -145,7 +167,7 @@ async fn main() -> Result<()> {
                 SetupManager::setup_node(&gateway, &gateway_key)?;
             }
         },
-        Commands::Gateway { sub } => match sub {
+        Some(Commands::Gateway { sub }) => match sub {
             GatewayCommands::Run {
                 bind,
                 control_port,
@@ -168,7 +190,7 @@ async fn main() -> Result<()> {
                 gateway.run().await?;
             }
         },
-        Commands::Node { sub } => match sub {
+        Some(Commands::Node { sub }) => match sub {
             NodeCommands::Run {
                 gateway,
                 node_id,
@@ -187,28 +209,28 @@ async fn main() -> Result<()> {
                 agent.run().await?;
             }
         },
-        Commands::Tui => {
+        Some(Commands::Tui) => {
             TuiDashboard::run()?;
         }
-        Commands::Doctor => {
+        Some(Commands::Doctor) => {
             DoctorManager::run_diagnostics()?;
         }
-        Commands::Status => {
+        Some(Commands::Status) => {
             StatusManager::show_status()?;
         }
-        Commands::Shield { mode } => {
+        Some(Commands::Shield { mode }) => {
             ShieldManager::set_mode(&mode)?;
         }
-        Commands::CheckUpdate => {
+        Some(Commands::CheckUpdate) => {
             UpdateManager::check_update()?;
         }
-        Commands::Update => {
+        Some(Commands::Update) => {
             UpdateManager::self_update()?;
         }
-        Commands::Apply => {
+        Some(Commands::Apply) => {
             SetupManager::apply_real_ip_routing()?;
         }
-        Commands::Uninstall => {
+        Some(Commands::Uninstall) => {
             UninstallManager::deep_uninstall()?;
         }
     }
