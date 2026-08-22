@@ -116,19 +116,97 @@ update_wirenet() {
         "firewall.sh"
         "fix-gateway.sh"
         "fix-node.sh"
-        "fix-node-routing.sh"
+        "install-daemon.sh"
         "uninstall.sh"
     )
+    for s in "${SCRIPTS[@]}"; do
+        curl -fsSL "${REPO_BASE}/scripts/${s}?$(date +%s)" -o "${INSTALL_DIR}/scripts/${s}" 2>/dev/null || true
+        chmod 755 "${INSTALL_DIR}/scripts/${s}" 2>/dev/null || true
+    done
+}
+
+# Direct CLI Command Dispatcher (for non-interactive execution)
+if [[ $# -gt 0 ]]; then
+    case "$1" in
+        tui|dashboard)
+            if command -v wirenet-daemon >/dev/null 2>&1; then
+                exec wirenet-daemon tui
+            else
+                fetch_script "status.sh" live
+                exit 0
+            fi
+            ;;
+        doctor)
+            fetch_script "doctor.sh"
+            if command -v wirenet-daemon >/dev/null 2>&1; then
+                wirenet-daemon doctor 2>/dev/null || true
+            fi
+            exit 0
+            ;;
+        status)
+            fetch_script "status.sh" "${2:-all}"
+            exit 0
+            ;;
+        shield|firewall)
+            fetch_script "firewall.sh" "${2:-status}"
+            exit 0
+            ;;
+        daemon)
+            case "${2:-status}" in
+                install|build)
+                    fetch_script "install-daemon.sh"
+                    ;;
+                start)
+                    systemctl start wirenet-gateway.service 2>/dev/null || systemctl start wirenet-node.service 2>/dev/null || true
+                    echo -e "${GREEN}[✓] WireNet Daemon started.${NC}"
+                    ;;
+                stop)
+                    systemctl stop wirenet-gateway.service 2>/dev/null || systemctl stop wirenet-node.service 2>/dev/null || true
+                    echo -e "${YELLOW}[✓] WireNet Daemon stopped.${NC}"
+                    ;;
+                restart)
+                    systemctl restart wirenet-gateway.service 2>/dev/null || systemctl restart wirenet-node.service 2>/dev/null || true
+                    echo -e "${GREEN}[✓] WireNet Daemon restarted.${NC}"
+                    ;;
+                status)
+                    systemctl status wirenet-gateway.service 2>/dev/null || systemctl status wirenet-node.service 2>/dev/null || echo "WireNet daemon service not installed. Run 'wirenet daemon install' to build."
+                    ;;
+            esac
+            exit 0
+            ;;
+        update|upgrade)
+            sync_scripts
+            echo -e "${GREEN}[✓] WireNet successfully updated!${NC}"
+            exit 0
+            ;;
+        help|--help|-h)
+            echo -e "${CYAN}${BOLD}WireNet Unified CLI Manager${NC}"
+            echo -e "Usage: wirenet [COMMAND]\n"
+            echo -e "Commands:"
+            echo -e "  wirenet                   Launch interactive Control Center TUI"
+            echo -e "  wirenet tui               Launch real-time live Dashboard"
+            echo -e "  wirenet doctor            Run 6-point system health inspector"
+            echo -e "  wirenet status            Display current tunnel & port status"
+            echo -e "  wirenet shield <mode>     Manage Anti-DDoS Shield (standard|strict|off|status)"
+            echo -e "  wirenet daemon <action>   Manage Rust Daemon (install|start|stop|restart|status)"
+            echo -e "  wirenet update            Update all WireNet scripts & binaries from GitHub"
+            exit 0
+            ;;
+    esac
+fi
+
+# Auto-Update System
+update_wirenet() {
+    draw_header
+    echo -e "${YELLOW}${BOLD}  🔄  CHECKING FOR WIRENET UPDATES...${NC}\n"
+    echo -e "Current Local Version: ${BOLD}${CURRENT_VERSION}${NC}"
+    echo -e "Connecting to GitHub repository: ${CYAN}UG88/wirenet${NC}..."
+
+    sync_scripts
 
     echo "[+] Downloading latest WireNet Master Manager..."
     curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/wirenet.sh?$(date +%s)" -o "${INSTALL_DIR}/wirenet.sh"
     chmod 755 "${INSTALL_DIR}/wirenet.sh"
-
-    for script in "${SCRIPTS[@]}"; do
-        echo "  [+] Updating scripts/${script}..."
-        curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/scripts/${script}?$(date +%s)" -o "${INSTALL_DIR}/scripts/${script}" 2>/dev/null || true
-        chmod 755 "${INSTALL_DIR}/scripts/${script}" 2>/dev/null || true
-    done
 
     cat << 'EOF' > "${BIN_PATH}"
 #!/usr/bin/env bash
