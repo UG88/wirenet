@@ -112,7 +112,7 @@ echo "  [✓] rinetd port bridge active on all game ports (25565-25700, 30000-30
 
 echo "[5/6] Ensuring WireNet Dynamic Watcher is Active..."
 mkdir -p /opt/wirenet/scripts
-curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
+curl -fsSL --max-time 5 -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
 chmod 755 /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
 
 cat << 'EOF' > /etc/systemd/system/wirenet-watcher.service
@@ -132,7 +132,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload 2>/dev/null || true
-systemctl enable --now wirenet-watcher.service 2>/dev/null || true
+systemctl enable wirenet-watcher.service 2>/dev/null || true
+systemctl restart --no-block wirenet-watcher.service 2>/dev/null || true
 echo "  [✓] WireNet Dynamic Port Watcher Daemon is ACTIVE!"
 
 echo "[6/6] Scanning Active Game Server Ports..."

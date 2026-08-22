@@ -225,7 +225,7 @@ systemctl restart rinetd 2>/dev/null || true
 # 11. Install and Start WireNet Dynamic Port Watcher Daemon
 echo "[+] Installing WireNet Dynamic Port Watcher Daemon..."
 mkdir -p /opt/wirenet/scripts
-curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
+curl -fsSL --max-time 5 -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
 chmod 755 /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
 
 cat << 'EOF' > /etc/systemd/system/wirenet-watcher.service
@@ -245,7 +245,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload 2>/dev/null || true
-systemctl enable --now wirenet-watcher.service 2>/dev/null || true
+systemctl enable wirenet-watcher.service 2>/dev/null || true
+systemctl restart --no-block wirenet-watcher.service 2>/dev/null || true
 
 echo "=========================================================="
 echo " [✓] WireNet Node is ACTIVE & FULLY AUTOMATED! (Node IP: $NODE_IP)"
