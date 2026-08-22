@@ -35,7 +35,7 @@ if [[ "$IS_GATEWAY" == true ]]; then
     # 1. Enable Kernel IP Forwarding
     sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 
-    # 2. Stop HAProxy so kernel routes directly
+    # 2. Stop HAProxy if running
     systemctl stop haproxy 2>/dev/null || true
     systemctl disable haproxy 2>/dev/null || true
 
@@ -51,24 +51,36 @@ if [[ "$IS_GATEWAY" == true ]]; then
     iptables -A FORWARD -i "$DEFAULT_IFACE" -o wg0 -j ACCEPT 2>/dev/null || true
     iptables -A FORWARD -i wg0 -o "$DEFAULT_IFACE" -j ACCEPT 2>/dev/null || true
 
-    # MASQUERADE only for Node outbound traffic, NOT for inbound player packets!
+    # Remove any MASQUERADE on wg0 so player source IP is 100% untouched!
+    iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
+
+    # Outbound NAT only for Node traffic reaching internet via Gateway
     iptables -t nat -D POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null || true
     iptables -t nat -A POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE
-
-    # Remove any masquerade on wg0
-    iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
 
     echo "=========================================================="
     echo " [✓] Gateway is passing raw, untouched player IPs to Node!"
     echo "=========================================================="
 
 else
-    echo "[+] Configuring Node Kernel & Docker for Native Real-IP Delivery..."
+    echo "[+] Configuring Node Kernel, WireGuard & Docker for Native Real-IP Delivery..."
 
     PRIMARY_IP=$(curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || echo "127.0.0.1")
     NODE_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "10.200.0.2")
 
-    # 1. Enable Kernel IP Forwarding & Loose Reverse-Path Filtering
+    # 1. Update WireGuard AllowedIPs on Node so it can route return packets back to any player IP
+    GW_KEY=$(wg show wg0 peers 2>/dev/null | head -n1 || true)
+    if [[ -n "$GW_KEY" ]]; then
+        echo "[+] Updating WireGuard peer routing to allow player return traffic..."
+        wg set wg0 peer "$GW_KEY" allowed-ips 0.0.0.0/0 2>/dev/null || true
+    fi
+
+    # Update wg0.conf permanently
+    if [[ -f /etc/wireguard/wg0.conf ]]; then
+        sed -i 's/AllowedIPs = .*/AllowedIPs = 0.0.0.0\/0/g' /etc/wireguard/wg0.conf 2>/dev/null || true
+    fi
+
+    # 2. Enable Kernel IP Forwarding & Loose Reverse-Path Filtering
     sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
     sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1 || true
     sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null 2>&1 || true
@@ -76,34 +88,25 @@ else
     sysctl -w net.ipv4.conf.wg0.rp_filter=2 >/dev/null 2>&1 || true
     sysctl -w net.ipv4.conf."$DEFAULT_IFACE".rp_filter=2 >/dev/null 2>&1 || true
 
-    # 2. Disable Docker userland-proxy (so Docker doesn't proxy through 172.18.0.1)
-    mkdir -p /etc/docker
-    cat << 'EOF' > /etc/docker/daemon.json
-{
-  "userland-proxy": false,
-  "live-restore": true,
-  "dns": ["1.1.1.1", "8.8.8.8"]
-}
-EOF
-    systemctl reload docker 2>/dev/null || true
-
     # 3. Connection Tracking & Policy Routing (Send game replies back via wg0)
-    iptables -t mangle -D PREROUTING -i wg0 -j CONNMARK --set-mark 0x1 2>/dev/null || true
+    iptables -t mangle -F PREROUTING 2>/dev/null || true
+    iptables -t mangle -F OUTPUT 2>/dev/null || true
+
     iptables -t mangle -A PREROUTING -i wg0 -j CONNMARK --set-mark 0x1
-
-    iptables -t mangle -D PREROUTING -m connmark --mark 0x1 -j CONNMARK --restore-mark 2>/dev/null || true
     iptables -t mangle -A PREROUTING -m connmark --mark 0x1 -j CONNMARK --restore-mark
-
-    iptables -t mangle -D OUTPUT -m connmark --mark 0x1 -j CONNMARK --restore-mark 2>/dev/null || true
     iptables -t mangle -A OUTPUT -m connmark --mark 0x1 -j CONNMARK --restore-mark
 
-    # Route marked packets back via wg0 to the Gateway
+    # Route marked packets back via wg0 to the Gateway using routing table 100
     ip rule del fwmark 0x1 table 100 2>/dev/null || true
-    ip rule add fwmark 0x1 table 100
+    ip rule add fwmark 0x1 table 100 priority 1000
     ip route flush table 100 2>/dev/null || true
     ip route add default dev wg0 table 100
 
-    # 4. Direct Kernel DNAT into local host/Docker bindings (Preserving Real Player Source IP!)
+    # 4. PREVENT Docker from masquerading packets coming from wg0! (Critical for Real IP!)
+    iptables -t nat -D POSTROUTING -i wg0 -j ACCEPT 2>/dev/null || true
+    iptables -t nat -I POSTROUTING 1 -i wg0 -j ACCEPT
+
+    # 5. Direct Kernel DNAT into local host/Docker bindings (Preserving Real Player Source IP!)
     iptables -t nat -D PREROUTING -i wg0 -d "$NODE_IP" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
     iptables -t nat -A PREROUTING -i wg0 -d "$NODE_IP" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
 
