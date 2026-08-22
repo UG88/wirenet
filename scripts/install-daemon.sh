@@ -34,15 +34,21 @@ fi
 echo "[3/5] Pulling latest WireNet Daemon source code..."
 mkdir -p /opt/wirenet
 if [[ ! -d /opt/wirenet/.git ]]; then
-    git clone https://github.com/UG88/wirenet.git /opt/wirenet
+    rm -rf /tmp/wirenet_clone
+    git clone https://github.com/UG88/wirenet.git /tmp/wirenet_clone
+    cp -rf /tmp/wirenet_clone/* /opt/wirenet/ 2>/dev/null || true
+    cp -rf /tmp/wirenet_clone/.git /opt/wirenet/ 2>/dev/null || true
+    rm -rf /tmp/wirenet_clone
 else
     cd /opt/wirenet && git fetch --all -q && git reset --hard origin/main -q
 fi
 
 # 4. Build Optimized Release Binary
 echo "[4/5] Compiling High-Performance wirenet-daemon (Release Mode)..."
+source "$HOME/.cargo/env" 2>/dev/null || true
+export PATH="$HOME/.cargo/bin:$PATH"
 cd /opt/wirenet/daemon
-"$HOME/.cargo/bin/cargo" build --release
+cargo build --release
 
 # Install binary globally
 cp -f /opt/wirenet/daemon/target/release/wirenet-daemon /usr/local/bin/wirenet-daemon
