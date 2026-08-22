@@ -36,14 +36,23 @@ else
     systemctl restart wg-quick@wg0 || true
 fi
 
-echo "[3/6] Restoring Docker Internet Access & Mojang Auth Routing..."
+echo "[3/6] Resetting Policy Routing and Cleaning NAT Tables..."
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1 || true
 
-# Allow tunnel traffic
+# Flush stale policy routing rules
+ip rule del fwmark 0x1 table 100 2>/dev/null || true
+ip route flush table 100 2>/dev/null || true
+
+# Flush stale mangle and nat prerouting tables
+iptables -t nat -F PREROUTING 2>/dev/null || true
+iptables -t mangle -F 2>/dev/null || true
+
+# Allow tunnel traffic in firewall
 iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
+iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true
 
 # Ensure Docker containers have MASQUERADE for Outbound Internet & Mojang Auth
 iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
@@ -52,7 +61,7 @@ iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || tru
 iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
 
-# Ensure Docker live-restore is configured so containers never stop during maintenance
+# Ensure Docker live-restore is configured so containers never stop
 mkdir -p /etc/docker
 if [[ ! -f /etc/docker/daemon.json ]] || ! grep -q "dns" /etc/docker/daemon.json 2>/dev/null; then
     cat << 'EOF' > /etc/docker/daemon.json
@@ -65,7 +74,7 @@ EOF
 fi
 echo "  [✓] Docker Internet Access, DNS & Mojang Auth routes active."
 
-echo "[4/6] Checking & Updating rinetd Port Bridge for all Game Ports..."
+echo "[4/6] Rebuilding rinetd Port Bridge for all Game Ports..."
 if ! command -v rinetd >/dev/null 2>&1; then
     echo "  [+] Installing rinetd..."
     apt-get update -qq && apt-get install -y rinetd || true
@@ -94,10 +103,11 @@ for port in $(ss -tulpn 2>/dev/null | grep -E "dockerd|java|wings" | awk '{print
     fi
 done
 
+systemctl enable --now rinetd 2>/dev/null || true
 systemctl restart rinetd 2>/dev/null || true
 echo "  [✓] rinetd port bridge active on all game ports (25565-25700, 30000-30100)"
 
-echo "[5/6] Checking WireNet Dynamic Port Watcher Daemon..."
+echo "[5/6] Ensuring WireNet Watcher Daemon is Running..."
 mkdir -p /opt/wirenet/scripts
 curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
 chmod 755 /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
@@ -123,7 +133,7 @@ systemctl enable --now wirenet-watcher.service 2>/dev/null || true
 echo "  [✓] WireNet Dynamic Port Watcher Daemon is ACTIVE!"
 
 echo "[6/6] Scanning Active Game Server Ports..."
-FOUND_PORTS=$(ss -tulpn 2>/dev/null | grep -E "25565|dockerd|java" | awk '{print $5}' | awk -F: '{print $NF}' | sort -u || true)
+FOUND_PORTS=$(ss -tulpn 2>/dev/null | grep -E "25565|25566|dockerd|java" | awk '{print $5}' | awk -F: '{print $NF}' | sort -u || true)
 if [[ -n "$FOUND_PORTS" ]]; then
     echo "  [✓] Active Server Ports Found: $FOUND_PORTS"
     for p in $FOUND_PORTS; do
@@ -137,5 +147,5 @@ fi
 
 echo "=========================================================="
 echo " [✓] Node Diagnostics & Auto-Repair Complete!"
-echo " Mojang Auth & PaperMC DNS are now 100% operational."
+echo " Ports 25565-25700 are fully bridged and online!"
 echo "=========================================================="
