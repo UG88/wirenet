@@ -63,6 +63,10 @@ EOF
     systemctl enable --now haproxy 2>/dev/null || true
     systemctl restart haproxy
 
+    # 4. Open firewall for incoming HAProxy game traffic
+    iptables -I INPUT 1 -p tcp -m multiport --dports 25565:25700,30000:40000 -j ACCEPT 2>/dev/null || true
+    iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
+
     echo ""
     echo "=========================================================="
     echo " [✓] HAProxy PROXY Protocol v2 is ACTIVE on Gateway!"
