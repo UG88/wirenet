@@ -37,24 +37,15 @@ impl SetupManager {
             k
         };
 
-        let pub_out = Command::new("wg").args(["pubkey"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                use std::io::Write;
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(priv_key.as_bytes());
-                }
-                child.wait_with_output()
-            });
-
-        let pub_key = match pub_out {
-            Ok(o) => {
-                let pk = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        let pub_key = match Self::derive_public_key(&priv_key) {
+            Ok(pk) => {
                 let _ = fs::write("/etc/wireguard/gateway_public.key", &pk);
                 pk
             }
-            Err(_) => "UNKNOWN_KEY".to_string(),
+            Err(e) => {
+                println!("  [!] Warning: Failed to derive public key: {:?}", e);
+                "UNKNOWN_KEY".to_string()
+            }
         };
 
         // 4. Write /etc/wireguard/wg0.conf
@@ -126,24 +117,15 @@ impl SetupManager {
             k
         };
 
-        let pub_out = Command::new("wg").args(["pubkey"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                use std::io::Write;
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(priv_key.as_bytes());
-                }
-                child.wait_with_output()
-            });
-
-        let pub_key = match pub_out {
-            Ok(o) => {
-                let pk = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        let pub_key = match Self::derive_public_key(&priv_key) {
+            Ok(pk) => {
                 let _ = fs::write("/etc/wireguard/node_public.key", &pk);
                 pk
             }
-            Err(_) => "UNKNOWN_KEY".to_string(),
+            Err(e) => {
+                println!("  [!] Warning: Failed to derive public key: {:?}", e);
+                "UNKNOWN_KEY".to_string()
+            }
         };
 
         // 4. Write /etc/wireguard/wg0.conf
@@ -239,5 +221,27 @@ impl SetupManager {
         let _ = Command::new("systemctl").args(["enable", "--now", "wirenet-node.service"]).output();
         let _ = Command::new("systemctl").args(["restart", "wirenet-node.service"]).output();
         Ok(())
+    }
+
+    fn derive_public_key(priv_key: &str) -> Result<String> {
+        use std::io::Write;
+        let mut child = Command::new("wg")
+            .arg("pubkey")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to spawn wg pubkey")?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = writeln!(stdin, "{}", priv_key.trim());
+            drop(stdin); // Explicitly close stdin to send EOF
+        }
+
+        let out = child.wait_with_output().context("Failed to wait for wg pubkey output")?;
+        let pub_key = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if pub_key.is_empty() {
+            return Err(anyhow::anyhow!("wg pubkey returned an empty string"));
+        }
+        Ok(pub_key)
     }
 }
