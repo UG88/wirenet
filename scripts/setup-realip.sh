@@ -99,8 +99,8 @@ else
     ip route add default dev wg0 table 100
 
     # 4. PREVENT Docker from masquerading packets coming from wg0!
-    iptables -t nat -D POSTROUTING -i wg0 -j ACCEPT 2>/dev/null || true
-    iptables -t nat -I POSTROUTING 1 -i wg0 -j ACCEPT
+    iptables -t nat -D POSTROUTING -m connmark --mark 0x1 -j ACCEPT 2>/dev/null || true
+    iptables -t nat -I POSTROUTING 1 -m connmark --mark 0x1 -j ACCEPT
 
     # 5. Direct Kernel DNAT to Docker Container IPs (100% bypasses docker-proxy!)
     if command -v docker >/dev/null 2>&1; then
