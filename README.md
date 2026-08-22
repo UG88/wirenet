@@ -12,7 +12,43 @@ It replaces userspace reverse proxies (like FRP) with native Linux kernel transp
 - **Multi-Node & Multi-IP Scaling** — Route multiple dedicated public IPs to different backend nodes so every customer VM gets default port `25565`.
 - **Zero-Downtime Dynamic Reconfiguration** — Toggle or upgrade firewall modes without disconnecting active players.
 - **Automatic Server Support** — All newly created servers in Pterodactyl on ports `25565-25600` and `30000-40050` work out of the box with zero manual configuration.
-- **1-Click Self-Healing Troubleshooter** — Automated diagnostic and repair tool fixes broken routes, missing keys, and Docker bridge NATs in 1 second.
+- **Interactive TUI Control Center** — Arrow-key navigable master manager for instant installation, doctor diagnostics, and 1-click repairs.
+
+---
+
+## 🎮 1-Command All-In-One Control Center
+
+Launch the interactive **TUI Master Menu** on **any VPS** with full arrow-key navigation (Hyper-V / Proxmox style):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/wirenet.sh | sudo bash
+```
+
+```
+================================================================================
+       __      ___          _   _      _     __  __                             
+       \ \    / (_)        | \ | |    | |   |  \/  |                            
+        \ \  / / _ _ __ ___|  \| | ___| |_  | \  / | __ _ _ __   __ _  __ _ ___ 
+         \ \/ / | | '__/ _ \ . ` |/ _ \ __| | |\/| |/ _` | '_ \ / _` |/ _` / __|
+          \  /  | | | |  __/ |\  |  __/ |_  | |  | | (_| | | | | (_| | (_| \__ \
+           \/   |_|_|  \___|_| \_|\___|\__| |_|  |_|\__,_|_| |_|\__,_|\__, |___/
+                                                                        __/ |   
+                                                                       |___/    
+               Kernel-Level Ingress & Anti-DDoS Shield for Pterodactyl          
+================================================================================
+  Use UP/DOWN Arrow Keys to select, press ENTER (or press number 1-9):
+
+  ▶ [ 1 ] Install / Setup Gateway VPS (Hub) 
+    [ 2 ] Install / Setup Pterodactyl Node VPS (Spoke)
+    [ 3 ] Live Status & Telemetry Dashboard
+    [ 4 ] Run WireNet Doctor (Full Diagnostic & Auto-Fix)
+    [ 5 ] Minecraft Anti-DDoS Shield Manager
+    [ 6 ] Custom Port Forwarder (e.g. 25567 -> 25565)
+    [ 7 ] Dedicated Multi-IP Mapping Tool
+    [ 8 ] Advanced Troubleshooting & Auto-Repair Menu
+    [ 9 ] Uninstall WireNet Completely
+    [ 10] Exit WireNet Manager
+```
 
 ---
 
@@ -51,51 +87,46 @@ It replaces userspace reverse proxies (like FRP) with native Linux kernel transp
 
 ---
 
-## 2. Fast 2-Step Setup
+## 2. Direct CLI Scripts Reference
 
-### Step 1: Set Up Gateway VPS (Run on Gateway VPS)
-
-On your **Public Gateway VPS** (`root@ip-172-31-15-89`):
+### Setup Gateway VPS
 ```bash
 curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-gateway.sh | sudo bash
 ```
 
----
-
-### Step 2: Set Up Pterodactyl Node VPS (Run on Node VPS)
-
-On your **Pterodactyl Node VPS** (`root@arsoftware`):
+### Setup Pterodactyl Node VPS (With Interactive Node Menu)
 ```bash
-GW_ENDPOINT="YOUR_GATEWAY_PUBLIC_IP" GW_PUBLIC_KEY="YOUR_GATEWAY_PUBLIC_KEY" curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
 ```
 
----
+### Run WireNet Doctor (6-Point Health Inspector)
+```bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/doctor.sh | sudo bash
+```
 
-## 3. 🛠️ 1-Click Auto-Troubleshooter & Health Check
+### View Live Telemetry Dashboard
+```bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/status.sh | sudo bash
+```
 
-If you ever experience connection timeouts or port binding issues, run this **1-command universal troubleshooter** on **either VPS**:
-
+### Universal 1-Click Auto-Troubleshooter
 ```bash
 curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot.sh | sudo bash
 ```
 
-*(This automatically detects whether it is running on the Gateway or Node, runs 5 health checks, cleans conflicting NAT rules, refreshes port bridges, and verifies end-to-end connectivity)*.
-
-See [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) for full error flowcharts and manual diagnostics.
-
 ---
 
-## 4. Multi-Node Scaling & New Server Creation
+## 3. Multi-Node Scaling & New Server Creation
 
 ### When Creating a New Node (Node 2, Node 3...):
-On the new Node VPS, assign a unique virtual IP (`10.200.0.3`):
+Run `setup-node.sh` on the new node and select the node number from the interactive menu:
 ```bash
-NODE_IP="10.200.0.3" GW_ENDPOINT="GATEWAY_IP" GW_PUBLIC_KEY="GATEWAY_KEY" curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
 ```
 
-Then authorize Node 2 on your Gateway VPS:
+Then authorize on Gateway VPS:
 ```bash
-sudo wg set wg0 peer <NODE2_PUBLIC_KEY> allowed-ips 10.200.0.3/32
+sudo wg set wg0 peer <NODE_PUBLIC_KEY> allowed-ips 10.200.0.3/32
 sudo ip route add 10.200.0.3 dev wg0 2>/dev/null || true
 ```
 
@@ -104,19 +135,9 @@ Any port assigned to the server in Pterodactyl within ranges **`25565-25600`** o
 
 ---
 
-## 5. Custom Port Translation (e.g. Gateway 25567 ──► Node 25565)
+## 4. Minecraft Anti-DDoS & Firewall Management
 
-To map an arbitrary Gateway port to a specific Node port:
-```bash
-# On Gateway VPS:
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/forward-port.sh | sudo bash -s -- 25567 10.200.0.3 25565
-```
-
----
-
-## 6. Minecraft Anti-DDoS & Firewall Management
-
-Manage the kernel packet filtering shield on your Gateway VPS at any time with **zero player disconnections**:
+Manage the kernel packet filtering shield on your Gateway VPS with **zero player disconnections**:
 
 ```bash
 # View live attack statistics and dropped packet counters
@@ -134,15 +155,16 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firew
 
 ---
 
-## 7. Script Summary Reference
+## 5. Script Summary Reference
 
 | Script | Server Location | Purpose |
 |---|---|---|
-| [`setup-gateway.sh`](setup-gateway.sh) | **Gateway VPS** | Deploys WireGuard Hub, port forwards, and Anti-DDoS Shield |
-| [`setup-node.sh`](setup-node.sh) | **Node VPS** | Connects Pterodactyl Node with automated `rinetd` Docker bridge |
+| [`wirenet.sh`](wirenet.sh) | **Any VPS** | Interactive Master TUI Menu with arrow-key navigation |
+| [`doctor.sh`](doctor.sh) | **Any VPS** | 6-point system health inspector & automated repair |
+| [`status.sh`](status.sh) | **Any VPS** | Live telemetry, peer table, and game ports dashboard |
 | [`troubleshoot.sh`](troubleshoot.sh) | **Any VPS** | Universal 1-click self-healing diagnostic & repair tool |
-| [`troubleshoot-gateway.sh`](troubleshoot-gateway.sh) | **Gateway VPS** | Gateway health diagnostic and routing repair |
-| [`troubleshoot-node.sh`](troubleshoot-node.sh) | **Node VPS** | Node health diagnostic and port bridge repair |
+| [`setup-gateway.sh`](setup-gateway.sh) | **Gateway VPS** | Deploys WireGuard Hub, port forwards, and Anti-DDoS Shield |
+| [`setup-node.sh`](setup-node.sh) | **Node VPS** | Interactive Node setup with automated `rinetd` Docker bridge |
 | [`forward-port.sh`](forward-port.sh) | **Gateway VPS** | 1-command custom port forwarder / translator |
 | [`add-ip-mapping.sh`](add-ip-mapping.sh) | **Gateway VPS** | Maps dedicated Public IPs to specific backend Nodes |
 | [`firewall.sh`](firewall.sh) | **Gateway VPS** | Controls the dynamic firewall (`status`, `enable`, `strict`, `disable`) |
@@ -150,12 +172,9 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firew
 
 ---
 
-## 8. Clean Uninstallation
+## 6. Error Fix Guide
 
-To completely stop and remove WireNet from any VPS:
-```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/uninstall.sh | sudo bash
-```
+For complete diagnostic flowcharts, see **[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)**.
 
 ---
 
