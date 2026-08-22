@@ -54,20 +54,6 @@ EOF
     echo -e "${NC}"
 }
 
-# Main Menu Options
-OPTIONS=(
-    "Install / Setup Gateway VPS (Hub)"
-    "Install / Setup Pterodactyl Node VPS (Spoke)"
-    "Live Status & Telemetry Dashboard"
-    "Run WireNet Doctor (Full Diagnostic & Auto-Repair)"
-    "Minecraft Anti-DDoS Shield Manager"
-    "Custom Port Forwarder (e.g. Gateway:25567 -> Node:25565)"
-    "Dedicated Multi-IP Mapping (Public IP -> Node)"
-    "Advanced Troubleshooting & Self-Healing Menu"
-    "Uninstall WireNet Completely"
-    "Exit WireNet Manager"
-)
-
 # Helper function to print an info/guide box
 show_guide() {
     local title="$1"
@@ -79,6 +65,307 @@ show_guide() {
         echo -e "${YELLOW}│${NC} ${CYAN}${BOLD}Example:${NC} ${example}"
     fi
     echo -e "${YELLOW}└───────────────────────────────────────────────────────────────────${NC}\n"
+}
+
+# Submenu: Status & Telemetry Dashboard
+status_menu() {
+    local STAT_CHOICE=0
+    local STAT_OPTIONS=(
+        "View Complete Telemetry Dashboard (All Metrics at Once)"
+        "Check WireGuard Interface & Handshake Telemetry Only"
+        "Check Live Tunnel Latency & Ping to Nodes Only"
+        "Inspect Active Minecraft & Game Server Ports Only"
+        "Inspect Anti-DDoS Attack Drop Counters Only"
+        "Back to Main Menu"
+    )
+
+    while true; do
+        draw_header
+        echo -e "${YELLOW}${BOLD}  📊  LIVE STATUS & TELEMETRY SUBMENU (by UG88)${NC}"
+        show_guide "Telemetry Options Guide" \
+                   "Choose whether to view all telemetry at once or inspect individual network subsystems." \
+                   "Sub-millisecond ping, handshakes, and port bindings are tested in real time."
+
+        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} and press ${BOLD}ENTER${NC} (or type a number):\n"
+
+        for i in "${!STAT_OPTIONS[@]}"; do
+            if [[ $i -eq $STAT_CHOICE ]]; then
+                echo -e "  ${CYAN}${BOLD}▶ ${REV} [ $((i + 1)) ] ${STAT_OPTIONS[$i]} ${NC}"
+            else
+                echo -e "    [ $((i + 1)) ] ${STAT_OPTIONS[$i]}"
+            fi
+        done
+        echo ""
+
+        IFS= read -rsn1 KEY </dev/tty || true
+        if [[ $KEY == $'\x1b' ]]; then
+            read -rsn2 -t 0.1 REST </dev/tty || true
+            KEY+="$REST"
+        fi
+
+        case "$KEY" in
+            $'\x1b[A'|[kK]) # UP
+                if [[ $STAT_CHOICE -gt 0 ]]; then
+                    STAT_CHOICE=$((STAT_CHOICE - 1))
+                else
+                    STAT_CHOICE=$((${#STAT_OPTIONS[@]} - 1))
+                fi
+                ;;
+            $'\x1b[B'|[jJ]) # DOWN
+                if [[ $STAT_CHOICE -lt $((${#STAT_OPTIONS[@]} - 1)) ]]; then
+                    STAT_CHOICE=$((STAT_CHOICE + 1))
+                else
+                    STAT_CHOICE=0
+                fi
+                ;;
+            ""|$'\n') # ENTER
+                case $STAT_CHOICE in
+                    0) fetch_script "status.sh" all ; break ;;
+                    1) fetch_script "status.sh" peers ; break ;;
+                    2) fetch_script "status.sh" latency ; break ;;
+                    3) fetch_script "status.sh" ports ; break ;;
+                    4) fetch_script "status.sh" firewall ; break ;;
+                    5) return ;;
+                esac
+                ;;
+            1) fetch_script "status.sh" all ; break ;;
+            2) fetch_script "status.sh" peers ; break ;;
+            3) fetch_script "status.sh" latency ; break ;;
+            4) fetch_script "status.sh" ports ; break ;;
+            5) fetch_script "status.sh" firewall ; break ;;
+            6|0|[qQ]) return ;;
+        esac
+    done
+
+    echo ""
+    read -r -p "Press ENTER to return to menu..." </dev/tty || true
+}
+
+# Submenu: Doctor & Diagnostics
+doctor_menu() {
+    local DOC_CHOICE=0
+    local DOC_OPTIONS=(
+        "Run Complete 6-Point Doctor Scan (All Checks + Auto-Fix)"
+        "Inspect Kernel Packet Forwarding & Sysctl Settings"
+        "Inspect WireGuard Interface & Cryptographic Keys"
+        "Inspect Docker Container Bridge & rinetd Port Maps"
+        "Inspect Gateway Port Forwarding & NAT Table"
+        "Back to Main Menu"
+    )
+
+    while true; do
+        draw_header
+        echo -e "${YELLOW}${BOLD}  🩺  WIREDNET DOCTOR & SYSTEM INSPECTOR SUBMENU${NC}"
+        show_guide "Doctor Diagnostic Guide" \
+                   "Performs deep health inspections on kernel, tunnel, Docker bindings, and routing." \
+                   "If any issue is detected, WireNet Doctor offers an instant 1-click auto-repair."
+
+        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} and press ${BOLD}ENTER${NC} (or type a number):\n"
+
+        for i in "${!DOC_OPTIONS[@]}"; do
+            if [[ $i -eq $DOC_CHOICE ]]; then
+                echo -e "  ${CYAN}${BOLD}▶ ${REV} [ $((i + 1)) ] ${DOC_OPTIONS[$i]} ${NC}"
+            else
+                echo -e "    [ $((i + 1)) ] ${DOC_OPTIONS[$i]}"
+            fi
+        done
+        echo ""
+
+        IFS= read -rsn1 KEY </dev/tty || true
+        if [[ $KEY == $'\x1b' ]]; then
+            read -rsn2 -t 0.1 REST </dev/tty || true
+            KEY+="$REST"
+        fi
+
+        case "$KEY" in
+            $'\x1b[A'|[kK]) # UP
+                if [[ $DOC_CHOICE -gt 0 ]]; then
+                    DOC_CHOICE=$((DOC_CHOICE - 1))
+                else
+                    DOC_CHOICE=$((${#DOC_OPTIONS[@]} - 1))
+                fi
+                ;;
+            $'\x1b[B'|[jJ]) # DOWN
+                if [[ $DOC_CHOICE -lt $((${#DOC_OPTIONS[@]} - 1)) ]]; then
+                    DOC_CHOICE=$((DOC_CHOICE + 1))
+                else
+                    DOC_CHOICE=0
+                fi
+                ;;
+            ""|$'\n') # ENTER
+                case $DOC_CHOICE in
+                    0) fetch_script "doctor.sh" ; break ;;
+                    1)
+                        echo -e "\n${BOLD}--- Kernel IP Forwarding & Localnet Settings ---${NC}"
+                        sysctl net.ipv4.ip_forward net.ipv4.conf.all.route_localnet net.ipv4.conf.all.rp_filter
+                        break
+                        ;;
+                    2)
+                        echo -e "\n${BOLD}--- WireGuard Configuration & Status ---${NC}"
+                        wg show wg0 2>/dev/null || echo "Interface wg0 is down."
+                        ip addr show dev wg0 2>/dev/null || true
+                        break
+                        ;;
+                    3)
+                        echo -e "\n${BOLD}--- Docker & rinetd Port Bridge Inspection ---${NC}"
+                        systemctl status rinetd --no-pager 2>/dev/null || true
+                        cat /etc/rinetd.conf 2>/dev/null | head -n 15 || echo "No rinetd.conf found."
+                        break
+                        ;;
+                    4)
+                        echo -e "\n${BOLD}--- Gateway NAT Table & Port Forwarding Rules ---${NC}"
+                        iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null | grep -E "10.200|dpt" || echo "No DNAT rules."
+                        iptables -t nat -L POSTROUTING -n -v --line-numbers 2>/dev/null | grep "MASQUERADE" || true
+                        break
+                        ;;
+                    5) return ;;
+                esac
+                ;;
+            1) fetch_script "doctor.sh" ; break ;;
+            2)
+                sysctl net.ipv4.ip_forward net.ipv4.conf.all.route_localnet net.ipv4.conf.all.rp_filter
+                break
+                ;;
+            3)
+                wg show wg0 2>/dev/null || echo "Interface wg0 is down."
+                ip addr show dev wg0 2>/dev/null || true
+                break
+                ;;
+            4)
+                systemctl status rinetd --no-pager 2>/dev/null || true
+                cat /etc/rinetd.conf 2>/dev/null | head -n 15 || echo "No rinetd.conf found."
+                break
+                ;;
+            5)
+                iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null | grep -E "10.200|dpt" || echo "No DNAT rules."
+                iptables -t nat -L POSTROUTING -n -v --line-numbers 2>/dev/null | grep "MASQUERADE" || true
+                break
+                ;;
+            6|0|[qQ]) return ;;
+        esac
+    done
+
+    echo ""
+    read -r -p "Press ENTER to return to menu..." </dev/tty || true
+}
+
+# Submenu: Port & Multi-IP Routing
+routing_menu() {
+    local ROUTE_CHOICE=0
+    local ROUTE_OPTIONS=(
+        "Add Custom Port Forward (e.g. Gateway:25567 -> Node:25565)"
+        "Map Dedicated Public IP to Specific Backend Node"
+        "List All Active Port Forwards & DNAT Rules"
+        "Flush & Reset All Port Forwarding Rules"
+        "Back to Main Menu"
+    )
+
+    while true; do
+        draw_header
+        echo -e "${YELLOW}${BOLD}  🔀  CUSTOM PORT & MULTI-IP ROUTING SUBMENU${NC}"
+        show_guide "Port Forwarding & Multi-IP Guide" \
+                   "Route specific Gateway ports or dedicated Public IPs directly to backend nodes." \
+                   "Allows multiple customer servers to use port 25565 on different Public IPs or ports."
+
+        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} and press ${BOLD}ENTER${NC} (or type a number):\n"
+
+        for i in "${!ROUTE_OPTIONS[@]}"; do
+            if [[ $i -eq $ROUTE_CHOICE ]]; then
+                echo -e "  ${CYAN}${BOLD}▶ ${REV} [ $((i + 1)) ] ${ROUTE_OPTIONS[$i]} ${NC}"
+            else
+                echo -e "    [ $((i + 1)) ] ${ROUTE_OPTIONS[$i]}"
+            fi
+        done
+        echo ""
+
+        IFS= read -rsn1 KEY </dev/tty || true
+        if [[ $KEY == $'\x1b' ]]; then
+            read -rsn2 -t 0.1 REST </dev/tty || true
+            KEY+="$REST"
+        fi
+
+        case "$KEY" in
+            $'\x1b[A'|[kK]) # UP
+                if [[ $ROUTE_CHOICE -gt 0 ]]; then
+                    ROUTE_CHOICE=$((ROUTE_CHOICE - 1))
+                else
+                    ROUTE_CHOICE=$((${#ROUTE_OPTIONS[@]} - 1))
+                fi
+                ;;
+            $'\x1b[B'|[jJ]) # DOWN
+                if [[ $ROUTE_CHOICE -lt $((${#ROUTE_OPTIONS[@]} - 1)) ]]; then
+                    ROUTE_CHOICE=$((ROUTE_CHOICE + 1))
+                else
+                    ROUTE_CHOICE=0
+                fi
+                ;;
+            ""|$'\n') # ENTER
+                case $ROUTE_CHOICE in
+                    0) # Add Port Forward
+                        echo -e "\n${BOLD}Enter Custom Port Translation Details:${NC}"
+                        read -r -p "1. Enter Public Gateway Port (e.g. 25567): " GW_PORT </dev/tty
+                        read -r -p "2. Enter Target Node WireGuard IP (e.g. 10.200.0.3): " DEST_NODE </dev/tty
+                        read -r -p "3. Enter Local Container Port on Node (e.g. 25565): " LOCAL_PORT </dev/tty
+                        if [[ -n "$GW_PORT" && -n "$DEST_NODE" && -n "$LOCAL_PORT" ]]; then
+                            fetch_script "forward-port.sh" "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
+                        fi
+                        break
+                        ;;
+                    1) # Multi-IP Mapping
+                        echo -e "\n${BOLD}Enter Dedicated Public IP Mapping Details:${NC}"
+                        read -r -p "1. Enter Dedicated Public IP on Gateway: " DEDICATED_IP </dev/tty
+                        read -r -p "2. Enter Target Node Virtual IP (e.g. 10.200.0.3): " TARGET_NODE </dev/tty
+                        if [[ -n "$DEDICATED_IP" && -n "$TARGET_NODE" ]]; then
+                            fetch_script "add-ip-mapping.sh" "$DEDICATED_IP" "$TARGET_NODE"
+                        fi
+                        break
+                        ;;
+                    2) # List Rules
+                        echo -e "\n${BOLD}--- Active DNAT & Port Forwarding Rules ---${NC}"
+                        iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null | grep -E "dpt|10.200" || echo "No active port forward rules."
+                        break
+                        ;;
+                    3) # Flush Rules
+                        echo "[+] Flushing DNAT tables..."
+                        iptables -t nat -F PREROUTING 2>/dev/null || true
+                        echo -e "${GREEN}[✓] Port forwarding table reset.${NC}"
+                        break
+                        ;;
+                    4) return ;;
+                esac
+                ;;
+            1)
+                read -r -p "1. Enter Public Gateway Port (e.g. 25567): " GW_PORT </dev/tty
+                read -r -p "2. Enter Target Node WireGuard IP (e.g. 10.200.0.3): " DEST_NODE </dev/tty
+                read -r -p "3. Enter Local Container Port on Node (e.g. 25565): " LOCAL_PORT </dev/tty
+                if [[ -n "$GW_PORT" && -n "$DEST_NODE" && -n "$LOCAL_PORT" ]]; then
+                    fetch_script "forward-port.sh" "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
+                fi
+                break
+                ;;
+            2)
+                read -r -p "1. Enter Dedicated Public IP on Gateway: " DEDICATED_IP </dev/tty
+                read -r -p "2. Enter Target Node Virtual IP (e.g. 10.200.0.3): " TARGET_NODE </dev/tty
+                if [[ -n "$DEDICATED_IP" && -n "$TARGET_NODE" ]]; then
+                    fetch_script "add-ip-mapping.sh" "$DEDICATED_IP" "$TARGET_NODE"
+                fi
+                break
+                ;;
+            3)
+                iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null | grep -E "dpt|10.200" || echo "No active port forward rules."
+                break
+                ;;
+            4)
+                iptables -t nat -F PREROUTING 2>/dev/null || true
+                echo -e "${GREEN}[✓] Port forwarding table reset.${NC}"
+                break
+                ;;
+            5|0|[qQ]) return ;;
+        esac
+    done
+
+    echo ""
+    read -r -p "Press ENTER to return to menu..." </dev/tty || true
 }
 
 # Submenu: Anti-DDoS Firewall
@@ -250,6 +537,19 @@ troubleshoot_menu() {
     read -r -p "Press ENTER to return to menu..." </dev/tty || true
 }
 
+# Main Menu Options List
+MAIN_OPTIONS=(
+    "Install / Setup Gateway VPS (Hub)"
+    "Install / Setup Pterodactyl Node VPS (Spoke)"
+    "Live Status & Telemetry Dashboard (Submenu)"
+    "WireNet Doctor & System Inspector (Submenu)"
+    "Minecraft Anti-DDoS Shield Manager (Submenu)"
+    "Custom Port & Multi-IP Routing Manager (Submenu)"
+    "Advanced Troubleshooting & Auto-Repair (Submenu)"
+    "Uninstall WireNet Completely"
+    "Exit WireNet Manager"
+)
+
 # Main Navigation Loop
 CURRENT_INDEX=0
 
@@ -257,11 +557,11 @@ while true; do
     draw_header
     echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} to select, press ${BOLD}ENTER${NC} (or press number ${BOLD}1-9${NC}):\n"
 
-    for i in "${!OPTIONS[@]}"; do
+    for i in "${!MAIN_OPTIONS[@]}"; do
         if [[ $i -eq $CURRENT_INDEX ]]; then
-            echo -e "  ${CYAN}${BOLD}▶ ${REV} [ $((i + 1)) ] ${OPTIONS[$i]} ${NC}"
+            echo -e "  ${CYAN}${BOLD}▶ ${REV} [ $((i + 1)) ] ${MAIN_OPTIONS[$i]} ${NC}"
         else
-            echo -e "    [ $((i + 1)) ] ${OPTIONS[$i]}"
+            echo -e "    [ $((i + 1)) ] ${MAIN_OPTIONS[$i]}"
         fi
     done
     echo ""
@@ -278,11 +578,11 @@ while true; do
             if [[ $CURRENT_INDEX -gt 0 ]]; then
                 CURRENT_INDEX=$((CURRENT_INDEX - 1))
             else
-                CURRENT_INDEX=$((${#OPTIONS[@]} - 1))
+                CURRENT_INDEX=$((${#MAIN_OPTIONS[@]} - 1))
             fi
             ;;
         $'\x1b[B'|[jJ]) # DOWN Arrow
-            if [[ $CURRENT_INDEX -lt $((${#OPTIONS[@]} - 1)) ]]; then
+            if [[ $CURRENT_INDEX -lt $((${#MAIN_OPTIONS[@]} - 1)) ]]; then
                 CURRENT_INDEX=$((CURRENT_INDEX + 1))
             else
                 CURRENT_INDEX=0
@@ -312,56 +612,12 @@ while true; do
                     fi
                     read -r -p "Press ENTER to continue..." </dev/tty || true
                     ;;
-                2) # Status Dashboard
-                    fetch_script "status.sh"
-                    read -r -p "Press ENTER to continue..." </dev/tty || true
-                    ;;
-                3) # Doctor Scan
-                    fetch_script "doctor.sh"
-                    read -r -p "Press ENTER to continue..." </dev/tty || true
-                    ;;
-                4) # Anti-DDoS Firewall
-                    firewall_menu
-                    ;;
-                5) # Port Forwarding / Translation
-                    draw_header
-                    show_guide "Custom Port Translation Guide" \
-                               "Forward any public Gateway port to any backend Node and local port." \
-                               "Gateway:25567 -> Node 2 (10.200.0.3):25565"
-
-                    echo -e "${BOLD}Enter Port Translation Details:${NC}"
-                    read -r -p "1. Enter Public Gateway Port (e.g. 25567): " GW_PORT </dev/tty
-                    read -r -p "2. Enter Target Node WireGuard IP (e.g. 10.200.0.3): " DEST_NODE </dev/tty
-                    read -r -p "3. Enter Local Container Port on Node (e.g. 25565): " LOCAL_PORT </dev/tty
-
-                    if [[ -n "$GW_PORT" && -n "$DEST_NODE" && -n "$LOCAL_PORT" ]]; then
-                        fetch_script "forward-port.sh" "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
-                    else
-                        echo -e "${RED}[-] Error: Port fields cannot be empty.${NC}"
-                    fi
-                    read -r -p "Press ENTER to continue..." </dev/tty || true
-                    ;;
-                6) # Multi-IP Mapping
-                    draw_header
-                    show_guide "Dedicated Multi-IP Mapping Guide" \
-                               "Route secondary public IPs on your Gateway directly to specific backend nodes so each customer VM gets default port 25565." \
-                               "Public IP 3.108.50.22 -> Node 2 (10.200.0.3)"
-
-                    echo -e "${BOLD}Enter Dedicated IP Mapping Details:${NC}"
-                    read -r -p "1. Enter Dedicated Public IP on Gateway: " DEDICATED_IP </dev/tty
-                    read -r -p "2. Enter Target Node Virtual IP (e.g. 10.200.0.3): " TARGET_NODE </dev/tty
-
-                    if [[ -n "$DEDICATED_IP" && -n "$TARGET_NODE" ]]; then
-                        fetch_script "add-ip-mapping.sh" "$DEDICATED_IP" "$TARGET_NODE"
-                    else
-                        echo -e "${RED}[-] Error: IP fields cannot be empty.${NC}"
-                    fi
-                    read -r -p "Press ENTER to continue..." </dev/tty || true
-                    ;;
-                7) # Troubleshooting Submenu
-                    troubleshoot_menu
-                    ;;
-                8) # Uninstall
+                2) status_menu ;;
+                3) doctor_menu ;;
+                4) firewall_menu ;;
+                5) routing_menu ;;
+                6) troubleshoot_menu ;;
+                7) # Uninstall
                     draw_header
                     show_guide "Complete Uninstallation Guide" \
                                "Completely stops and wipes WireNet services, WireGuard keys, and port forwarding rules." \
@@ -372,7 +628,7 @@ while true; do
                     fi
                     read -r -p "Press ENTER to continue..." </dev/tty || true
                     ;;
-                9) # Exit
+                8) # Exit
                     echo -e "\n${GREEN}Thank you for using WireNet by UG88! Exiting.${NC}\n"
                     exit 0
                     ;;
@@ -400,46 +656,12 @@ while true; do
             fi
             read -r -p "Press ENTER to continue..." </dev/tty || true
             ;;
-        3) fetch_script "status.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
-        4) fetch_script "doctor.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+        3) status_menu ;;
+        4) doctor_menu ;;
         5) firewall_menu ;;
-        6)
-            draw_header
-            show_guide "Custom Port Translation Guide" \
-                       "Forward any public Gateway port to any backend Node and local port." \
-                       "Gateway:25567 -> Node 2 (10.200.0.3):25565"
-
-            echo -e "${BOLD}Enter Port Translation Details:${NC}"
-            read -r -p "1. Enter Public Gateway Port (e.g. 25567): " GW_PORT </dev/tty
-            read -r -p "2. Enter Target Node WireGuard IP (e.g. 10.200.0.3): " DEST_NODE </dev/tty
-            read -r -p "3. Enter Local Container Port on Node (e.g. 25565): " LOCAL_PORT </dev/tty
-
-            if [[ -n "$GW_PORT" && -n "$DEST_NODE" && -n "$LOCAL_PORT" ]]; then
-                fetch_script "forward-port.sh" "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
-            else
-                echo -e "${RED}[-] Error: Port fields cannot be empty.${NC}"
-            fi
-            read -r -p "Press ENTER to continue..." </dev/tty || true
-            ;;
-        7)
-            draw_header
-            show_guide "Dedicated Multi-IP Mapping Guide" \
-                       "Route secondary public IPs on your Gateway directly to specific backend nodes so each customer VM gets default port 25565." \
-                       "Public IP 3.108.50.22 -> Node 2 (10.200.0.3)"
-
-            echo -e "${BOLD}Enter Dedicated IP Mapping Details:${NC}"
-            read -r -p "1. Enter Dedicated Public IP on Gateway: " DEDICATED_IP </dev/tty
-            read -r -p "2. Enter Target Node Virtual IP (e.g. 10.200.0.3): " TARGET_NODE </dev/tty
-
-            if [[ -n "$DEDICATED_IP" && -n "$TARGET_NODE" ]]; then
-                fetch_script "add-ip-mapping.sh" "$DEDICATED_IP" "$TARGET_NODE"
-            else
-                echo -e "${RED}[-] Error: IP fields cannot be empty.${NC}"
-            fi
-            read -r -p "Press ENTER to continue..." </dev/tty || true
-            ;;
-        8) troubleshoot_menu ;;
-        9)
+        6) routing_menu ;;
+        7) troubleshoot_menu ;;
+        8)
             draw_header
             show_guide "Complete Uninstallation Guide" \
                        "Completely stops and wipes WireNet services, WireGuard keys, and port forwarding rules." \
