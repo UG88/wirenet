@@ -26,20 +26,25 @@ ip route del default dev wg0 2>/dev/null || true
 echo "[1/5] Checking Build Dependencies..."
 if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
+    echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 2>/dev/null || true
     apt-get update -qq || true
     apt-get install -y -qq build-essential curl git pkg-config libssl-dev || apt-get install -y build-essential curl git pkg-config libssl-dev || true
 fi
 
-# 2. Install Rust Toolchain if not present
-if ! command -v cargo >/dev/null 2>&1 && [[ ! -f "$HOME/.cargo/bin/cargo" ]]; then
-    echo "[2/5] Installing Rust & Cargo toolchain..."
+# 2. Configure Rust Toolchain
+echo "[2/5] Configuring Rust & Cargo toolchain..."
+source "$HOME/.cargo/env" 2>/dev/null || true
+export PATH="$HOME/.cargo/bin:$PATH"
+
+if ! command -v rustup >/dev/null 2>&1; then
+    echo "  [+] Installing Rustup..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-    source "$HOME/.cargo/env" 2>/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
-else
-    echo "[2/5] Rust Toolchain is already installed."
-    source "$HOME/.cargo/env" 2>/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
+    source "$HOME/.cargo/env" 2>/dev/null || true
+    export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
+rustup default stable 2>/dev/null || rustup toolchain install stable 2>/dev/null || true
+source "$HOME/.cargo/env" 2>/dev/null || true
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # 3. Pull WireNet Source Code
