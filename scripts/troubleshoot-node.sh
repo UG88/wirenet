@@ -74,10 +74,12 @@ ip rule add fwmark 0x1 table 100
 ip route flush table 100 2>/dev/null || true
 ip route add default via 10.200.0.1 dev wg0 table 100
 
-# Flush stale nat tables and add transparent localnet forwarding
+# Flush stale nat tables and add transparent forwarding to Docker host IP
 iptables -t nat -F PREROUTING 2>/dev/null || true
-iptables -t nat -A PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1 2>/dev/null || true
-iptables -t nat -A PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 127.0.0.1 2>/dev/null || true
+iptables -t nat -A PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
+iptables -t nat -A PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
+iptables -t nat -A PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
+iptables -t nat -A PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
 
 # Allow tunnel traffic in firewall
 iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true

@@ -25,7 +25,7 @@ impl Default for GatewayConfig {
             shield_mode: "standard".to_string(),
             syn_rate_limit: 25,
             max_connections_per_ip: 50,
-            enable_proxy_protocol: true,
+            enable_proxy_protocol: false,
         }
     }
 }
