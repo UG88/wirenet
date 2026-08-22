@@ -59,8 +59,19 @@ sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.wg0.rp_filter=2 >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.eth0.rp_filter=2 >/dev/null 2>&1 || true
 
-# Flush stale mangle and nat tables
+# Set up CONNMARK connection tracking for asymmetric return path
 iptables -t mangle -F 2>/dev/null || true
+iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1
+iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark
+iptables -t mangle -A OUTPUT -j CONNMARK --restore-mark
+
+# Set up Policy Routing Table 100
+ip rule del fwmark 0x1 table 100 2>/dev/null || true
+ip rule add fwmark 0x1 table 100
+ip route flush table 100 2>/dev/null || true
+ip route add default via 10.200.0.1 dev wg0 table 100
+
+# Flush stale nat tables
 iptables -t nat -F PREROUTING 2>/dev/null || true
 
 # Allow loopback, local subnet, and WireGuard tunnel input at top of INPUT chain

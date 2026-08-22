@@ -42,42 +42,24 @@ for node_ip in 10.200.0.2 10.200.0.3 10.200.0.4; do
 done
 
 echo "[4/5] Refreshing Port Forwarding & Firewall Rules..."
+# Stop any userland proxies so pure kernel transparent routing handles 100% of game traffic
+systemctl stop haproxy rinetd wirenet-gateway 2>/dev/null || true
+systemctl disable haproxy rinetd 2>/dev/null || true
+
 # Allow forwarding unconditionally to/from wg0
 iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
 
-# Apply MASQUERADE on wg0 and public interface for symmetric, unbreakable TCP routing
+# Outbound internet MASQUERADE only on default public interface (Preserves Real Player Source IPs across wg0!)
 iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
-iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
 iptables -t nat -D POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE
 
-# Flush stale PREROUTING nat so rinetd ingress bridge accepts 0.0.0.0 traffic cleanly
+# Pure Transparent DNAT: Forwards game ports 25565-25700 directly to Node with real player source IP intact
 iptables -t nat -F PREROUTING 2>/dev/null || true
-
-# Rebuild rinetd fallback bridge on Gateway
-if ! command -v rinetd >/dev/null 2>&1; then
-    echo "  [+] Installing rinetd on Gateway..."
-    DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::ForceIPv4=true -qq 2>/dev/null || true
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rinetd 2>/dev/null || true
-fi
-
-cat << EOF > /etc/rinetd.conf
-# WireNet Gateway Ingress Port Bridge (0.0.0.0 -> Node 10.200.0.2)
-EOF
-
-for port in $(seq 25565 25700); do
-    echo "0.0.0.0 $port 10.200.0.2 $port" >> /etc/rinetd.conf
-done
-
-for port in $(seq 30000 30100); do
-    echo "0.0.0.0 $port 10.200.0.2 $port" >> /etc/rinetd.conf
-done
-
-systemctl stop wirenet-gateway.service 2>/dev/null || true
-systemctl enable --now rinetd 2>/dev/null || true
-systemctl restart rinetd 2>/dev/null || true
+iptables -t nat -A PREROUTING -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 10.200.0.2
+iptables -t nat -A PREROUTING -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2
 
 # Allow control plane port 9000 and WireGuard interface input
 iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
