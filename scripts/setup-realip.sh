@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet 100% Native Kernel Real-IP Engine (ZERO Plugins / ZERO File Edits)
+# WireNet 100% Native Kernel Real-IP Engine (Direct Container IP Routing)
 # Developed by UG88 | https://github.com/UG88/wirenet
-# Pure kernel-level transparent routing directly into Docker containers
+# Pure kernel-level transparent routing directly into Docker containers (ZERO Plugins)
 # ==============================================================================
 
 set -euo pipefail
@@ -26,7 +26,7 @@ DEFAULT_IFACE="${DEFAULT_IFACE:-eth0}"
 
 echo "=========================================================="
 echo " WireNet Native Real-IP Engine: ${ROLE}"
-echo " (100% Zero-Plugin / Zero-File-Edit Pure Kernel Routing)"
+echo " (Direct Kernel Routing -> 100% Genuine Player IPs)"
 echo "=========================================================="
 
 if [[ "$IS_GATEWAY" == true ]]; then
@@ -63,10 +63,7 @@ if [[ "$IS_GATEWAY" == true ]]; then
     echo "=========================================================="
 
 else
-    echo "[+] Configuring Node Kernel, WireGuard & Docker for Native Real-IP Delivery..."
-
-    PRIMARY_IP=$(curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || echo "127.0.0.1")
-    NODE_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "10.200.0.2")
+    echo "[+] Configuring Node Kernel, WireGuard & Direct Container Routing..."
 
     # 1. Update WireGuard AllowedIPs on Node so it can route return packets back to any player IP
     GW_KEY=$(wg show wg0 peers 2>/dev/null | head -n1 || true)
@@ -75,7 +72,6 @@ else
         wg set wg0 peer "$GW_KEY" allowed-ips 0.0.0.0/0 2>/dev/null || true
     fi
 
-    # Update wg0.conf permanently
     if [[ -f /etc/wireguard/wg0.conf ]]; then
         sed -i 's/AllowedIPs = .*/AllowedIPs = 0.0.0.0\/0/g' /etc/wireguard/wg0.conf 2>/dev/null || true
     fi
@@ -102,33 +98,72 @@ else
     ip route flush table 100 2>/dev/null || true
     ip route add default dev wg0 table 100
 
-    # 4. PREVENT Docker from masquerading packets coming from wg0! (Critical for Real IP!)
+    # 4. PREVENT Docker from masquerading packets coming from wg0!
     iptables -t nat -D POSTROUTING -i wg0 -j ACCEPT 2>/dev/null || true
     iptables -t nat -I POSTROUTING 1 -i wg0 -j ACCEPT
 
-    # 5. Direct Kernel DNAT into local host/Docker bindings (Preserving Real Player Source IP!)
-    iptables -t nat -D PREROUTING -i wg0 -d "$NODE_IP" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
-    iptables -t nat -A PREROUTING -i wg0 -d "$NODE_IP" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
+    # 5. Direct Kernel DNAT to Docker Container IPs (100% bypasses docker-proxy!)
+    if command -v docker >/dev/null 2>&1; then
+        echo "[+] Mapping active Docker containers directly..."
+        for container in $(docker ps -q 2>/dev/null || true); do
+            c_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container" 2>/dev/null || true)
+            if [[ -n "$c_ip" ]]; then
+                for port_mapping in $(docker port "$container" 2>/dev/null || true); do
+                    h_port=$(echo "$port_mapping" | awk -F: '{print $NF}' | tr -d ' ')
+                    c_port=$(echo "$port_mapping" | awk -F/ '{print $1}' | tr -d ' ')
+                    if [[ "$h_port" =~ ^[0-9]+$ ]]; then
+                        echo "  [+] Direct Bridge: wg0:${h_port} ──► ${c_ip}:${c_port} (Pure Real IP)"
+                        iptables -t nat -D PREROUTING -i wg0 -p tcp --dport "$h_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
+                        iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport "$h_port" -j DNAT --to-destination "${c_ip}:${c_port}"
 
-    iptables -t nat -D PREROUTING -i wg0 -d "$NODE_IP" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
-    iptables -t nat -A PREROUTING -i wg0 -d "$NODE_IP" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
+                        iptables -t nat -D PREROUTING -i wg0 -p udp --dport "$h_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
+                        iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport "$h_port" -j DNAT --to-destination "${c_ip}:${c_port}"
+                    fi
+                done
+            fi
+        done
+    fi
 
     # Forwarding rules for tunnel and Docker bridges
     iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
     iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
     iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
 
-    # Outbound MASQUERADE for container internet access only (NOT for inbound tunnel traffic)
+    # Outbound MASQUERADE for container internet access only
     iptables -t nat -D POSTROUTING -s 172.16.0.0/12 ! -d 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
     iptables -t nat -A POSTROUTING -s 172.16.0.0/12 ! -d 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
 
-    # Stop userspace rinetd so pure kernel routing delivers raw Real IPs directly into Docker
+    # Install and restart WireNet Watcher Daemon
+    mkdir -p /opt/wirenet/scripts
+    curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
+    chmod 755 /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
+
+    cat << 'EOF' > /etc/systemd/system/wirenet-watcher.service
+[Unit]
+Description=WireNet Dynamic Docker Port Watcher Daemon
+After=docker.service wg-quick@wg0.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /opt/wirenet/scripts/wirenet-watcher.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable --now wirenet-watcher.service 2>/dev/null || true
+    systemctl restart wirenet-watcher.service 2>/dev/null || true
+
+    # Stop rinetd
     systemctl stop rinetd 2>/dev/null || true
     systemctl disable rinetd 2>/dev/null || true
 
     echo "=========================================================="
-    echo " [✓] 100% Native Real-IP Routing is ACTIVE!"
-    echo " ZERO plugins or server edits required."
-    echo " Players now show up with their genuine public IPs!"
+    echo " [✓] Direct Container Real-IP Routing is ACTIVE!"
+    echo " All incoming packets go directly into container sockets."
+    echo " Players will now show up with their genuine public IPs!"
     echo "=========================================================="
 fi

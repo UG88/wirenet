@@ -1,50 +1,60 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet Dynamic Port Watcher (Automated Docker Port Bridge Daemon)
+# WireNet Dynamic Container Port Watcher Daemon (Direct Container IP Bridge)
 # Developed by UG88 | https://github.com/UG88/wirenet
-# Automatically detects any newly created Docker / Pterodactyl server and bridges it
+# Automatically DNATs directly to Docker container IPs for 100% Real Player IPs
 # ==============================================================================
 
 set -euo pipefail
 
-NODE_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "10.200.0.2")
-PRIMARY_IP=$(curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || echo "127.0.0.1")
-
-sync_ports() {
-    local changed=false
-    local current_ports
-    current_ports=$(ss -tulpn 2>/dev/null | grep -E "dockerd|java|wings" | awk '{print $5}' | awk -F: '{print $NF}' | sort -u || true)
-
-    for port in $current_ports; do
-        if [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1024 && "$port" -le 65535 ]]; then
-            if ! grep -q "$NODE_IP $port " /etc/rinetd.conf 2>/dev/null; then
-                echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
-                changed=true
-                echo "[WireNet Watcher] Dynamically bridged new game server port: ${port}"
-            fi
-        fi
-    done
-
-    if [[ "$changed" == true ]]; then
-        systemctl restart rinetd 2>/dev/null || true
+sync_container_routes() {
+    if ! command -v docker >/dev/null 2>&1; then
+        return
     fi
+
+    # Scan running Docker containers and map directly to container internal IPs
+    for container in $(docker ps -q 2>/dev/null || true); do
+        local c_ip
+        c_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container" 2>/dev/null || true)
+        
+        if [[ -z "$c_ip" ]]; then
+            continue
+        fi
+
+        # Find all port allocations for this container
+        for port_mapping in $(docker port "$container" 2>/dev/null || true); do
+            local host_port
+            host_port=$(echo "$port_mapping" | awk -F: '{print $NF}' | tr -d ' ')
+            local container_port
+            container_port=$(echo "$port_mapping" | awk -F/ '{print $1}' | tr -d ' ')
+
+            if [[ "$host_port" =~ ^[0-9]+$ ]]; then
+                # Direct TCP Kernel DNAT to container IP (Bypasses docker-proxy & preserves Real Player IP!)
+                iptables -t nat -D PREROUTING -i wg0 -p tcp --dport "$host_port" -j DNAT --to-destination "${c_ip}:${container_port}" 2>/dev/null || true
+                iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport "$host_port" -j DNAT --to-destination "${c_ip}:${container_port}"
+
+                # Direct UDP Kernel DNAT
+                iptables -t nat -D PREROUTING -i wg0 -p udp --dport "$host_port" -j DNAT --to-destination "${c_ip}:${container_port}" 2>/dev/null || true
+                iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport "$host_port" -j DNAT --to-destination "${c_ip}:${container_port}"
+            fi
+        done
+    done
 }
 
-echo "[WireNet Watcher] Service active. Listening for new Pterodactyl Docker containers..."
+echo "[WireNet Watcher] Active. Mapping direct container IPs for 100% Real Player IPs..."
 
-# Initial port sync
-sync_ports
+# Initial sync
+sync_container_routes
 
-# Event loop: Watch docker container start/die events and sync ports automatically
+# Event listener for container start/die events
 if command -v docker >/dev/null 2>&1; then
     docker events --filter 'event=start' --filter 'event=die' 2>/dev/null | while read -r event; do
-        sleep 2
-        sync_ports
+        sleep 1
+        sync_container_routes
     done
 else
-    # Polling fallback if docker CLI is not present
     while true; do
-        sleep 10
-        sync_ports
+        sleep 5
+        sync_container_routes
     done
 fi
