@@ -195,15 +195,16 @@ iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || tru
 iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
 
-# Configure Docker public DNS (Cloudflare + Google) if not configured
+# Configure Docker public DNS and live-restore (never stops running containers)
 mkdir -p /etc/docker
 if [[ ! -f /etc/docker/daemon.json ]] || ! grep -q "dns" /etc/docker/daemon.json 2>/dev/null; then
     cat << 'EOF' > /etc/docker/daemon.json
 {
-  "dns": ["1.1.1.1", "8.8.8.8"]
+  "dns": ["1.1.1.1", "8.8.8.8"],
+  "live-restore": true
 }
 EOF
-    systemctl restart docker 2>/dev/null || true
+    systemctl reload docker 2>/dev/null || true
 fi
 
 # 10. Start and Enable Services
