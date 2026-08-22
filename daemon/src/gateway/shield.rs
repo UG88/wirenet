@@ -55,6 +55,7 @@ impl AntiDDoSShield {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_mode(&self, mode: &str) {
         let mut w = self.mode_name.blocking_write();
         *w = mode.to_string();
@@ -104,6 +105,7 @@ impl AntiDDoSShield {
         });
     }
 
+    #[allow(dead_code)]
     pub async fn get_telemetry(&self) -> ShieldTelemetry {
         ShieldTelemetry {
             total_connections: self.total_conns.load(Ordering::Relaxed),

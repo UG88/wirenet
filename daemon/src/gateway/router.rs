@@ -69,10 +69,12 @@ impl GatewayRouter {
         Some(session.virtual_ip.clone())
     }
 
+    #[allow(dead_code)]
     pub fn get_active_nodes(&self) -> Vec<NodeSession> {
         self.nodes.iter().map(|item| item.value().clone()).collect()
     }
 
+    #[allow(dead_code)]
     pub fn get_total_mapped_ports(&self) -> usize {
         self.port_to_node.len()
     }
