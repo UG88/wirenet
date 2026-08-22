@@ -42,31 +42,44 @@ for node_ip in 10.200.0.2 10.200.0.3 10.200.0.4; do
 done
 
 echo "[4/5] Refreshing Port Forwarding & Firewall Rules..."
-# 1. Stop any userspace forwarders to eliminate port binding and proxy conflicts
-systemctl stop rinetd haproxy wirenet-gateway 2>/dev/null || true
-systemctl disable rinetd haproxy 2>/dev/null || true
+# 1. Clean stale iptables PREROUTING so userland socket receives 0.0.0.0 traffic cleanly
+iptables -t nat -F PREROUTING 2>/dev/null || true
 
-# 2. Enable kernel packet forwarding
-sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
-sysctl -w net.ipv4.conf.all.forwarding=1 >/dev/null 2>&1 || true
-
-# 3. Allow all forwarding unconditionally
-iptables -I FORWARD 1 -j ACCEPT 2>/dev/null || true
+# 2. Allow all firewall input on game ports and tunnel
 iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I INPUT 1 -p tcp --dport 9000 -j ACCEPT 2>/dev/null || true
 iptables -I INPUT 1 -p tcp -m multiport --dports 25565:25700,30000:40000 -j ACCEPT 2>/dev/null || true
 iptables -I INPUT 1 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j ACCEPT 2>/dev/null || true
+iptables -I FORWARD 1 -j ACCEPT 2>/dev/null || true
 
-# 4. Clean NAT tables and configure pure Kernel Layer-3 DNAT
-iptables -t nat -F PREROUTING 2>/dev/null || true
-iptables -t nat -A PREROUTING -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 10.200.0.2
-iptables -t nat -A PREROUTING -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2
-
-# 5. Symmetrical WireGuard MASQUERADE
+# 3. Symmetrical WireGuard MASQUERADE
 iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
 iptables -t nat -D POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE
+
+# 4. Install and configure rinetd ingress bridge on Gateway
+if ! command -v rinetd >/dev/null 2>&1; then
+    echo "  [+] Installing rinetd..."
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rinetd 2>/dev/null || true
+fi
+
+cat << EOF > /etc/rinetd.conf
+# WireNet Gateway Ingress Stream Bridge (0.0.0.0 -> Node 10.200.0.2)
+EOF
+
+for port in $(seq 25565 25700); do
+    echo "0.0.0.0 $port 10.200.0.2 $port" >> /etc/rinetd.conf
+done
+
+for port in $(seq 30000 30100); do
+    echo "0.0.0.0 $port 10.200.0.2 $port" >> /etc/rinetd.conf
+done
+
+systemctl stop wirenet-gateway.service haproxy 2>/dev/null || true
+systemctl enable --now rinetd 2>/dev/null || true
+systemctl restart rinetd 2>/dev/null || true
 
 # Open in UFW if UFW is active
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
@@ -77,7 +90,7 @@ if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
     ufw allow 30000:40000/tcp >/dev/null 2>&1 || true
     ufw allow 30000:40000/udp >/dev/null 2>&1 || true
 fi
-echo "  [✓] Gateway Pure Kernel DNAT Active (Forwarding to Node 10.200.0.2)."
+echo "  [✓] Gateway Ingress Stream Bridge Active (0.0.0.0:25565 -> 10.200.0.2:25565)."
 
 echo "[5/5] Testing End-to-End Minecraft Port..."
 if nc -z -w 2 127.0.0.1 25565 2>/dev/null; then

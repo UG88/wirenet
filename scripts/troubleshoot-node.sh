@@ -89,12 +89,8 @@ iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
 iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true
 
-# 3. Direct Kernel DNAT from wg0 to Primary IP (where Docker / Wings listens)
-iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
-iptables -t nat -A PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
-
-iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
-iptables -t nat -A PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
+# 3. Clean stale PREROUTING rules so rinetd stream bridge receives tunnel traffic
+iptables -t nat -F PREROUTING 2>/dev/null || true
 
 # 4. Symmetrical MASQUERADE for tunnel and Docker traffic
 iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
