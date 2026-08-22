@@ -27,6 +27,13 @@ fi
 
 REPO_BASE="https://raw.githubusercontent.com/UG88/wirenet/main"
 
+# Helper to fetch fresh scripts bypassing GitHub CDN cache
+fetch_script() {
+    local script_name="$1"
+    shift
+    curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/${script_name}?$(date +%s)" | sudo bash -s -- "$@"
+}
+
 # Header with fixed ASCII Art and UG88 Author branding
 draw_header() {
     clear
@@ -126,17 +133,17 @@ firewall_menu() {
                 ;;
             ""|$'\n') # ENTER
                 case $FW_CHOICE in
-                    0) curl -fsSL "$REPO_BASE/firewall.sh" | sudo bash -s -- status ; break ;;
-                    1) curl -fsSL "$REPO_BASE/firewall.sh" | sudo bash -s -- enable ; break ;;
-                    2) curl -fsSL "$REPO_BASE/firewall.sh" | sudo bash -s -- strict ; break ;;
-                    3) curl -fsSL "$REPO_BASE/firewall.sh" | sudo bash -s -- disable ; break ;;
+                    0) fetch_script "firewall.sh" status ; break ;;
+                    1) fetch_script "firewall.sh" enable ; break ;;
+                    2) fetch_script "firewall.sh" strict ; break ;;
+                    3) fetch_script "firewall.sh" disable ; break ;;
                     4) return ;;
                 esac
                 ;;
-            1) curl -fsSL "$REPO_BASE/firewall.sh" | sudo bash -s -- status ; break ;;
-            2) curl -fsSL "$REPO_BASE/firewall.sh" | sudo bash -s -- enable ; break ;;
-            3) curl -fsSL "$REPO_BASE/firewall.sh" | sudo bash -s -- strict ; break ;;
-            4) curl -fsSL "$REPO_BASE/firewall.sh" | sudo bash -s -- disable ; break ;;
+            1) fetch_script "firewall.sh" status ; break ;;
+            2) fetch_script "firewall.sh" enable ; break ;;
+            3) fetch_script "firewall.sh" strict ; break ;;
+            4) fetch_script "firewall.sh" disable ; break ;;
             5|0|[qQ]) return ;;
         esac
     done
@@ -198,9 +205,9 @@ troubleshoot_menu() {
                 ;;
             ""|$'\n') # ENTER
                 case $SUB_CHOICE in
-                    0) curl -fsSL "$REPO_BASE/troubleshoot.sh" | sudo bash ; break ;;
-                    1) curl -fsSL "$REPO_BASE/troubleshoot-gateway.sh" | sudo bash ; break ;;
-                    2) curl -fsSL "$REPO_BASE/troubleshoot-node.sh" | sudo bash ; break ;;
+                    0) fetch_script "troubleshoot.sh" ; break ;;
+                    1) fetch_script "troubleshoot-gateway.sh" ; break ;;
+                    2) fetch_script "troubleshoot-node.sh" ; break ;;
                     3)
                         echo "[+] Flushing stale NAT and Mangle tables..."
                         iptables -t nat -F PREROUTING 2>/dev/null || true
@@ -219,9 +226,9 @@ troubleshoot_menu() {
                     5) return ;;
                 esac
                 ;;
-            1) curl -fsSL "$REPO_BASE/troubleshoot.sh" | sudo bash ; break ;;
-            2) curl -fsSL "$REPO_BASE/troubleshoot-gateway.sh" | sudo bash ; break ;;
-            3) curl -fsSL "$REPO_BASE/troubleshoot-node.sh" | sudo bash ; break ;;
+            1) fetch_script "troubleshoot.sh" ; break ;;
+            2) fetch_script "troubleshoot-gateway.sh" ; break ;;
+            3) fetch_script "troubleshoot-node.sh" ; break ;;
             4)
                 iptables -t nat -F PREROUTING 2>/dev/null || true
                 iptables -t nat -F POSTROUTING 2>/dev/null || true
@@ -290,7 +297,7 @@ while true; do
                                "Run this once on your Public Gateway VPS."
                     read -r -p "Ready to begin Gateway setup? [Y/n]: " CONFIRM </dev/tty || CONFIRM="Y"
                     if [[ "$CONFIRM" =~ ^[Yy]?$ ]]; then
-                        curl -fsSL "$REPO_BASE/setup-gateway.sh" | sudo bash
+                        fetch_script "setup-gateway.sh"
                     fi
                     read -r -p "Press ENTER to continue..." </dev/tty || true
                     ;;
@@ -301,16 +308,16 @@ while true; do
                                "Run this on each backend Node VPS where Pterodactyl Wings is running."
                     read -r -p "Ready to begin Node setup? [Y/n]: " CONFIRM </dev/tty || CONFIRM="Y"
                     if [[ "$CONFIRM" =~ ^[Yy]?$ ]]; then
-                        curl -fsSL "$REPO_BASE/setup-node.sh" | sudo bash
+                        fetch_script "setup-node.sh"
                     fi
                     read -r -p "Press ENTER to continue..." </dev/tty || true
                     ;;
                 2) # Status Dashboard
-                    curl -fsSL "$REPO_BASE/status.sh" | sudo bash
+                    fetch_script "status.sh"
                     read -r -p "Press ENTER to continue..." </dev/tty || true
                     ;;
                 3) # Doctor Scan
-                    curl -fsSL "$REPO_BASE/doctor.sh" | sudo bash
+                    fetch_script "doctor.sh"
                     read -r -p "Press ENTER to continue..." </dev/tty || true
                     ;;
                 4) # Anti-DDoS Firewall
@@ -328,7 +335,7 @@ while true; do
                     read -r -p "3. Enter Local Container Port on Node (e.g. 25565): " LOCAL_PORT </dev/tty
 
                     if [[ -n "$GW_PORT" && -n "$DEST_NODE" && -n "$LOCAL_PORT" ]]; then
-                        curl -fsSL "$REPO_BASE/forward-port.sh" | sudo bash -s -- "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
+                        fetch_script "forward-port.sh" "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
                     else
                         echo -e "${RED}[-] Error: Port fields cannot be empty.${NC}"
                     fi
@@ -345,7 +352,7 @@ while true; do
                     read -r -p "2. Enter Target Node Virtual IP (e.g. 10.200.0.3): " TARGET_NODE </dev/tty
 
                     if [[ -n "$DEDICATED_IP" && -n "$TARGET_NODE" ]]; then
-                        curl -fsSL "$REPO_BASE/add-ip-mapping.sh" | sudo bash -s -- "$DEDICATED_IP" "$TARGET_NODE"
+                        fetch_script "add-ip-mapping.sh" "$DEDICATED_IP" "$TARGET_NODE"
                     else
                         echo -e "${RED}[-] Error: IP fields cannot be empty.${NC}"
                     fi
@@ -361,7 +368,7 @@ while true; do
                                "Safe uninstaller will restore your server to its original network state."
                     read -r -p "Are you sure you want to completely uninstall WireNet? [y/N]: " CONFIRM </dev/tty || CONFIRM="N"
                     if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-                        curl -fsSL "$REPO_BASE/uninstall.sh" | sudo bash
+                        fetch_script "uninstall.sh"
                     fi
                     read -r -p "Press ENTER to continue..." </dev/tty || true
                     ;;
@@ -378,7 +385,7 @@ while true; do
                        "Run this once on your Public Gateway VPS."
             read -r -p "Ready to begin Gateway setup? [Y/n]: " CONFIRM </dev/tty || CONFIRM="Y"
             if [[ "$CONFIRM" =~ ^[Yy]?$ ]]; then
-                curl -fsSL "$REPO_BASE/setup-gateway.sh" | sudo bash
+                fetch_script "setup-gateway.sh"
             fi
             read -r -p "Press ENTER to continue..." </dev/tty || true
             ;;
@@ -389,12 +396,12 @@ while true; do
                        "Run this on each backend Node VPS where Pterodactyl Wings is running."
             read -r -p "Ready to begin Node setup? [Y/n]: " CONFIRM </dev/tty || CONFIRM="Y"
             if [[ "$CONFIRM" =~ ^[Yy]?$ ]]; then
-                curl -fsSL "$REPO_BASE/setup-node.sh" | sudo bash
+                fetch_script "setup-node.sh"
             fi
             read -r -p "Press ENTER to continue..." </dev/tty || true
             ;;
-        3) curl -fsSL "$REPO_BASE/status.sh" | sudo bash ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
-        4) curl -fsSL "$REPO_BASE/doctor.sh" | sudo bash ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+        3) fetch_script "status.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+        4) fetch_script "doctor.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
         5) firewall_menu ;;
         6)
             draw_header
@@ -408,7 +415,7 @@ while true; do
             read -r -p "3. Enter Local Container Port on Node (e.g. 25565): " LOCAL_PORT </dev/tty
 
             if [[ -n "$GW_PORT" && -n "$DEST_NODE" && -n "$LOCAL_PORT" ]]; then
-                curl -fsSL "$REPO_BASE/forward-port.sh" | sudo bash -s -- "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
+                fetch_script "forward-port.sh" "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
             else
                 echo -e "${RED}[-] Error: Port fields cannot be empty.${NC}"
             fi
@@ -425,7 +432,7 @@ while true; do
             read -r -p "2. Enter Target Node Virtual IP (e.g. 10.200.0.3): " TARGET_NODE </dev/tty
 
             if [[ -n "$DEDICATED_IP" && -n "$TARGET_NODE" ]]; then
-                curl -fsSL "$REPO_BASE/add-ip-mapping.sh" | sudo bash -s -- "$DEDICATED_IP" "$TARGET_NODE"
+                fetch_script "add-ip-mapping.sh" "$DEDICATED_IP" "$TARGET_NODE"
             else
                 echo -e "${RED}[-] Error: IP fields cannot be empty.${NC}"
             fi
@@ -439,7 +446,7 @@ while true; do
                        "Safe uninstaller will restore your server to its original network state."
             read -r -p "Are you sure you want to completely uninstall WireNet? [y/N]: " CONFIRM </dev/tty || CONFIRM="N"
             if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-                curl -fsSL "$REPO_BASE/uninstall.sh" | sudo bash
+                fetch_script "uninstall.sh"
             fi
             read -r -p "Press ENTER to continue..." </dev/tty || true
             ;;
