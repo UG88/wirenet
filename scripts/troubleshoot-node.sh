@@ -18,14 +18,11 @@ fi
 PRIMARY_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || curl -s -4 --connect-timeout 2 -m 2 ifconfig.me 2>/dev/null || echo "127.0.0.1")
 NODE_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "10.200.0.2")
 
-echo "[1/6] Enabling Transparent Real IP Ingress (AllowedIPs = 0.0.0.0/0 & Table = off)..."
+echo "[1/6] Restoring WireGuard Tunnel & Configuring Kernel Ingress..."
 if [[ -f /etc/wireguard/wg0.conf ]]; then
-    # Ensure Table = off is present so wg-quick never touches default routing table
-    if ! grep -q "Table = off" /etc/wireguard/wg0.conf; then
-        sed -i '/PrivateKey = /a Table = off' /etc/wireguard/wg0.conf 2>/dev/null || true
-    fi
-    # Set AllowedIPs = 0.0.0.0/0 so WireGuard accepts all real player source IPs
-    sed -i 's/^AllowedIPs = .*/AllowedIPs = 0.0.0.0\/0/g' /etc/wireguard/wg0.conf 2>/dev/null || true
+    # Keep wg0.conf on 10.200.0.0/24 so wg-quick never touches default routes
+    sed -i 's/^AllowedIPs = .*/AllowedIPs = 10.200.0.0\/24/g' /etc/wireguard/wg0.conf 2>/dev/null || true
+    sed -i '/Table = off/d' /etc/wireguard/wg0.conf 2>/dev/null || true
 fi
 
 # Clean any custom routing tables or rules
@@ -42,7 +39,7 @@ if [[ -n "$GW_KEY" ]]; then
 fi
 
 ip route add 10.200.0.0/24 dev wg0 2>/dev/null || true
-echo "  [✓] WireGuard interface wg0 configured for Transparent Real IP."
+echo "  [✓] WireGuard interface wg0 online and configured for Real IP ingress."
 
 echo "[2/6] Testing Gateway Tunnel Ping (10.200.0.1)..."
 sleep 1
