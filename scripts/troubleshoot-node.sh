@@ -162,6 +162,8 @@ if [[ -n "$FOUND_PORTS" ]]; then
     done
 else
     echo "  [i] No server currently running. Start your server in Pterodactyl when ready."
+fi
+
 NODE_PUB=$(cat /etc/wireguard/node_public.key 2>/dev/null || wg show wg0 public-key 2>/dev/null || echo "")
 
 if ! ping -c 2 -W 2 10.200.0.1 >/dev/null 2>&1; then
