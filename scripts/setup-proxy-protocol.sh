@@ -57,8 +57,10 @@ listen minecraft_${port}
 EOF
     done
 
-    # 3. Allow HAProxy binding and restart
-    systemctl enable haproxy 2>/dev/null || true
+    # 3. Stop any conflicting background forwarders and start HAProxy
+    systemctl stop rinetd wirenet-gateway 2>/dev/null || true
+    systemctl disable rinetd 2>/dev/null || true
+    systemctl enable --now haproxy 2>/dev/null || true
     systemctl restart haproxy
 
     echo ""
