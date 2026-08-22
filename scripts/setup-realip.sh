@@ -32,8 +32,12 @@ echo "=========================================================="
 if [[ "$IS_GATEWAY" == true ]]; then
     echo "[+] Configuring Gateway for Transparent Real-IP Delivery..."
     
-    # 1. Enable Kernel IP Forwarding
+    # 1. Enable Kernel IP Forwarding & Loose Reverse-Path Filtering
     sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+    sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null 2>&1 || true
+    sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null 2>&1 || true
+    sysctl -w net.ipv4.conf.wg0.rp_filter=2 >/dev/null 2>&1 || true
+    sysctl -w net.ipv4.conf."$DEFAULT_IFACE".rp_filter=2 >/dev/null 2>&1 || true
 
     # 2. Stop HAProxy if running
     systemctl stop haproxy 2>/dev/null || true
@@ -46,10 +50,10 @@ if [[ "$IS_GATEWAY" == true ]]; then
     iptables -t nat -D PREROUTING -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
     iptables -t nat -A PREROUTING -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2
 
-    # Allow Forwarding
-    iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-    iptables -A FORWARD -i "$DEFAULT_IFACE" -o wg0 -j ACCEPT 2>/dev/null || true
-    iptables -A FORWARD -i wg0 -o "$DEFAULT_IFACE" -j ACCEPT 2>/dev/null || true
+    # Allow Forwarding in all directions
+    iptables -I FORWARD 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+    iptables -I FORWARD 1 -i "$DEFAULT_IFACE" -o wg0 -j ACCEPT 2>/dev/null || true
+    iptables -I FORWARD 1 -i wg0 -o "$DEFAULT_IFACE" -j ACCEPT 2>/dev/null || true
 
     # Remove any MASQUERADE on wg0 so player source IP is 100% untouched!
     iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
@@ -126,6 +130,7 @@ else
     iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
     iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
     iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
+    iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true
 
     # Outbound MASQUERADE for container internet access only
     iptables -t nat -D POSTROUTING -s 172.16.0.0/12 ! -d 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
