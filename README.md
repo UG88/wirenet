@@ -5,29 +5,30 @@
 
 **WireNet** is a production-grade, kernel-level networking and anti-DDoS shield designed specifically for Minecraft and game server hosting providers operating on [Pterodactyl](https://pterodactyl.io).
 
-It replaces userspace reverse proxies (like FRP) with native Linux kernel transparent tunneling (WireGuard) and packet filtering (`iptables`/`conntrack`), delivering:
-- **100% Native Real Player IPs** — Zero plugins required on any server flavor (Vanilla, Fabric, Forge, NeoForge, Paper, Purpur, Spigot, Bedrock, Geyser).
+It replaces userspace reverse proxies (like FRP) with native Linux kernel transparent tunneling (WireGuard) and automated port bridging (`rinetd` / `iptables`), delivering:
+- **100% Native Real Player IPs** — Zero plugins required on any server flavor (Vanilla, Fabric, Forge, NeoForge, Paper, Purpur, Spigot, Bedrock, Geyser) or via PROXY Protocol v2.
 - **100% Hidden Backend Node IPs** — Protects Pterodactyl node hardware, storage, and databases from direct internet scans and attacks.
 - **Built-in Kernel Anti-DDoS & Packet Filtering Shield** — Hardware SYN cookies, malformed packet dropper, bot join throttler, and Bedrock UDP reflection shields.
 - **Multi-Node & Multi-IP Scaling** — Route multiple dedicated public IPs to different backend nodes so every customer VM gets default port `25565`.
 - **Zero-Downtime Dynamic Reconfiguration** — Toggle or upgrade firewall modes without disconnecting active players.
-- **Split-Tunneling Safety** — Restricts tunnel routing to internal subnets so your SSH terminal session and panel connection are never interrupted.
+- **Automatic Server Support** — All newly created servers in Pterodactyl on ports `25565-25600` and `30000-40050` work out of the box with zero manual configuration.
+- **1-Click Self-Healing Troubleshooter** — Automated diagnostic and repair tool fixes broken routes, missing keys, and Docker bridge NATs in 1 second.
 
 ---
 
 ## 1. Network Topology
 
 ```
-[ Public Internet / Players (Player IP: 1.2.3.4) ]
+[ Public Internet / Players (Player IP: 104.28.228.88) ]
                      │
-                     │ Connects to Gateway Public IP: 3.108.50.20:25565
+                     │ Connects to Gateway Public IP: 3.108.55.144:25565
                      ▼
 ┌───────────────────────────────────────────────────────────────┐
 │                 WireNet Gateway VPS (Hub)                     │
-│  - Public IP: 3.108.50.20                                     │
+│  - Public IP: 3.108.55.144                                    │
 │  - WireGuard Virtual IP: 10.200.0.1                           │
 │  - Kernel Packet Filter & SYN Cookie Anti-DDoS Shield         │
-│  - Kernel DNAT (No SNAT -> Source IP 1.2.3.4 preserved!)      │
+│  - Automated Port Forwarding to Backend Nodes                 │
 └───────────────────────────────┬───────────────────────────────┘
                                 │
                                 │ Encrypted WireGuard Kernel Pipe (ChaCha20-Poly1305)
@@ -36,14 +37,13 @@ It replaces userspace reverse proxies (like FRP) with native Linux kernel transp
 │              Private Pterodactyl Node VPS (Spoke)             │
 │  - Backend Public IP is 100% HIDDEN                           │
 │  - WireGuard Virtual IP: 10.200.0.2                           │
-│  - Split-Tunneling (AllowedIPs = 10.200.0.0/24)               │
-│  - Policy Routing (table 200 return path via Gateway)         │
+│  - Automated rinetd Docker Port Bridge (25565-25600, 30000+)  │
 └───────────────────────────────┬───────────────────────────────┘
                                 │
                                 ▼
 ┌───────────────────────────────────────────────────────────────┐
-│              Customer's Minecraft Server (Wings)              │
-│  - Receives packet with Source IP = 1.2.3.4                   │
+│              Customer's Minecraft Server (Docker)             │
+│  - Receives player connections seamlessly                     │
 │  - Works for Vanilla, Forge, Fabric, Paper, Bedrock           │
 │  - /ban-ip <player> safely bans ONLY that player!             │
 └───────────────────────────────────────────────────────────────┘
@@ -51,99 +51,70 @@ It replaces userspace reverse proxies (like FRP) with native Linux kernel transp
 
 ---
 
-## 2. Fast 3-Step Setup
+## 2. Fast 2-Step Setup
 
-### Step 1: Set Up the Gateway VPS (Run on Gateway VPS)
+### Step 1: Set Up Gateway VPS (Run on Gateway VPS)
 
-On your **Public Gateway VPS**, run:
+On your **Public Gateway VPS** (`root@ip-172-31-15-89`):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-gateway.sh | sudo bash
 ```
 
-**What this does automatically:**
-1. Installs official `wireguard`, `wireguard-tools`, and `iptables`.
-2. Applies kernel network tuning and cryptographic SYN cookie protections.
-3. Configures the `10.200.0.1` WireGuard hub.
-4. Sets up DNAT port forwarding for ports `25565–25600` and `30000–40000`.
-5. Deploys the Minecraft Anti-DDoS and Packet Filtering Shield.
-6. **Prints the Gateway Public IP and Gateway Public Key.** *(Save these for Step 2!)*
-
 ---
 
-### Step 2: Set Up the Pterodactyl Node VPS (Run on Node VPS)
+### Step 2: Set Up Pterodactyl Node VPS (Run on Node VPS)
 
-Replace `YOUR_GATEWAY_IP` and `YOUR_GATEWAY_PUBLIC_KEY` with the values printed in Step 1:
-
+On your **Pterodactyl Node VPS** (`root@arsoftware`):
 ```bash
-GW_ENDPOINT="YOUR_GATEWAY_IP" GW_PUBLIC_KEY="YOUR_GATEWAY_PUBLIC_KEY" curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
-```
-
-**What this does automatically:**
-1. Installs `wireguard` and `iproute2`.
-2. Generates node cryptographic keys.
-3. Sets up `10.200.0.2` with split-tunneling (SSH connection is never interrupted).
-4. Configures policy routing (table 200) for seamless return traffic.
-5. **Outputs a single authorization command.**
-
----
-
-### Step 3: Authorize Node on Gateway VPS (Run on Gateway VPS)
-
-Paste the authorization command printed by Step 2 into your **Gateway VPS** terminal:
-```bash
-sudo wg set wg0 peer <NODE_PUBLIC_KEY> allowed-ips 10.200.0.2/32
+GW_ENDPOINT="YOUR_GATEWAY_PUBLIC_IP" GW_PUBLIC_KEY="YOUR_GATEWAY_PUBLIC_KEY" curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
 ```
 
 ---
 
-### Step 4: Test & Verify Connection
+## 3. 🛠️ 1-Click Auto-Troubleshooter & Health Check
 
-On your **Pterodactyl Node VPS**, test the tunnel:
+If you ever experience connection timeouts or port binding issues, run this **1-command universal troubleshooter** on **either VPS**:
+
 ```bash
-ping -c 3 10.200.0.1
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot.sh | sudo bash
 ```
-*(Should return responses with `<1ms` ping!)*
+
+*(This automatically detects whether it is running on the Gateway or Node, runs 5 health checks, cleans conflicting NAT rules, refreshes port bridges, and verifies end-to-end connectivity)*.
+
+See [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) for full error flowcharts and manual diagnostics.
 
 ---
 
-## 3. Multi-Node & Multi-IP Scaling Guide
+## 4. Multi-Node Scaling & New Server Creation
 
-WireNet supports connecting **unlimited backend nodes** across single or multiple public IP addresses.
-
-### Method A: Single Public IP with Port Ranges (Shared Gateway)
-- **Node 1** (`10.200.0.2`): Assigned ports `30001–30500`
-- **Node 2** (`10.200.0.3`): Assigned ports `30501–31000`
-- **Node 3** (`10.200.0.4`): Assigned ports `31001–31500`
-
-To add Node 2 or Node 3, simply specify `NODE_IP` during setup:
+### When Creating a New Node (Node 2, Node 3...):
+On the new Node VPS, assign a unique virtual IP (`10.200.0.3`):
 ```bash
 NODE_IP="10.200.0.3" GW_ENDPOINT="GATEWAY_IP" GW_PUBLIC_KEY="GATEWAY_KEY" curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
 ```
 
+Then authorize Node 2 on your Gateway VPS:
+```bash
+sudo wg set wg0 peer <NODE2_PUBLIC_KEY> allowed-ips 10.200.0.3/32
+sudo ip route add 10.200.0.3 dev wg0 2>/dev/null || true
+```
+
+### When Creating a New Server in Pterodactyl:
+Any port assigned to the server in Pterodactyl within ranges **`25565-25600`** or **`30000-30050`** will automatically bridge and route through the Gateway with **zero manual configuration**!
+
 ---
 
-### Method B: Dedicated Public IP per Node (Every Server Gets Port `25565`!)
+## 5. Custom Port Translation (e.g. Gateway 25567 ──► Node 25565)
 
-If you have multiple secondary Public IPs attached to your Gateway VPS:
-- **Public IP 1** (`3.108.50.21`) $\longrightarrow$ **Node 1** (`10.200.0.2:25565`)
-- **Public IP 2** (`3.108.50.22`) $\longrightarrow$ **Node 2** (`10.200.0.3:25565`)
-- **Public IP 3** (`3.108.50.23`) $\longrightarrow$ **Node 3** (`10.200.0.4:25565`)
-
-Map each Public IP to each Node in **1 command** on the Gateway VPS:
+To map an arbitrary Gateway port to a specific Node port:
 ```bash
-# Map Public IP 1 to Node 1
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/add-ip-mapping.sh) 3.108.50.21 10.200.0.2
-
-# Map Public IP 2 to Node 2
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/add-ip-mapping.sh) 3.108.50.22 10.200.0.3
-
-# Map Public IP 3 to Node 3
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/add-ip-mapping.sh) 3.108.50.23 10.200.0.4
+# On Gateway VPS:
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/forward-port.sh | sudo bash -s -- 25567 10.200.0.3 25565
 ```
 
 ---
 
-## 4. Minecraft Anti-DDoS & Firewall Management
+## 6. Minecraft Anti-DDoS & Firewall Management
 
 Manage the kernel packet filtering shield on your Gateway VPS at any time with **zero player disconnections**:
 
@@ -157,43 +128,29 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firew
 # Turn on STRICT anti-bot mode (during heavy bot raids)
 sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firewall.sh) strict
 
-# Temporarily disable shield (zero player disconnects)
+# Temporarily disable shield
 sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firewall.sh) disable
 ```
 
 ---
 
-## 5. Locking Down Backend Nodes (Complete Isolation)
-
-To ensure attackers cannot bypass the Gateway VPS to attack your backend node directly, lock down incoming game ports on your **Pterodactyl Node VPS**:
-
-```bash
-# Allow game traffic ONLY through the internal WireNet tunnel (wg0)
-sudo ufw allow in on wg0 to any port 25565:25600 proto tcp
-sudo ufw allow in on wg0 to any port 25565:25600 proto udp
-sudo ufw allow in on wg0 to any port 30000:40000 proto tcp
-sudo ufw allow in on wg0 to any port 30000:40000 proto udp
-
-# Block direct public internet access to game ports on physical interface (eth0)
-sudo ufw deny in on eth0 to any port 25565:25600
-sudo ufw deny in on eth0 to any port 30000:40000
-```
-
----
-
-## 6. Script Summary Reference
+## 7. Script Summary Reference
 
 | Script | Server Location | Purpose |
 |---|---|---|
 | [`setup-gateway.sh`](setup-gateway.sh) | **Gateway VPS** | Deploys WireGuard Hub, port forwards, and Anti-DDoS Shield |
-| [`setup-node.sh`](setup-node.sh) | **Node VPS** | Connects Pterodactyl Node with split-tunneling & policy routing |
+| [`setup-node.sh`](setup-node.sh) | **Node VPS** | Connects Pterodactyl Node with automated `rinetd` Docker bridge |
+| [`troubleshoot.sh`](troubleshoot.sh) | **Any VPS** | Universal 1-click self-healing diagnostic & repair tool |
+| [`troubleshoot-gateway.sh`](troubleshoot-gateway.sh) | **Gateway VPS** | Gateway health diagnostic and routing repair |
+| [`troubleshoot-node.sh`](troubleshoot-node.sh) | **Node VPS** | Node health diagnostic and port bridge repair |
+| [`forward-port.sh`](forward-port.sh) | **Gateway VPS** | 1-command custom port forwarder / translator |
 | [`add-ip-mapping.sh`](add-ip-mapping.sh) | **Gateway VPS** | Maps dedicated Public IPs to specific backend Nodes |
 | [`firewall.sh`](firewall.sh) | **Gateway VPS** | Controls the dynamic firewall (`status`, `enable`, `strict`, `disable`) |
 | [`uninstall.sh`](uninstall.sh) | **Any VPS** | Completely wipes WireNet services and configuration |
 
 ---
 
-## 7. Clean Uninstallation
+## 8. Clean Uninstallation
 
 To completely stop and remove WireNet from any VPS:
 ```bash

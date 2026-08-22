@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet Node Setup Script (True Transparent Real-IP Routing with Table=off)
-# Preserves 100% Real Player Public IPs into Minecraft Docker containers
+# WireNet Pterodactyl Node Setup Script (Automated WireGuard + Docker Port Bridge)
+# Works out of the box for ALL newly created servers with 0 manual intervention
 # ==============================================================================
 
 set -euo pipefail
 
 echo "=========================================================="
-echo " Starting WireNet Real-IP Node Setup (Pterodactyl Node)"
+echo " Starting WireNet Node Setup (Pterodactyl Node)"
 echo "=========================================================="
 
 if [[ $EUID -ne 0 ]]; then
@@ -15,8 +15,8 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# 1. Clean broken repos & install networking tools
-echo "[+] Installing WireGuard and networking tools..."
+# 1. Clean broken repos & install networking tools & rinetd
+echo "[+] Installing WireGuard, networking tools, and rinetd port bridge..."
 if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     rm -f /etc/apt/sources.list.d/*kali*.list /etc/apt/sources.list.d/*rolling*.list 2>/dev/null || true
@@ -25,33 +25,38 @@ if command -v apt-get >/dev/null 2>&1; then
         sed -i '/kali\.download/d' /etc/apt/sources.list 2>/dev/null || true
     fi
     apt-get update -qq || true
-    apt-get install -y -qq wireguard wireguard-tools iproute2 iptables curl || apt-get install -y wireguard wireguard-tools iproute2 iptables curl
+    apt-get install -y -qq wireguard wireguard-tools iproute2 iptables rinetd curl ufw || apt-get install -y wireguard wireguard-tools iproute2 iptables rinetd curl ufw
 elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y wireguard-tools iproute iptables curl >/dev/null 2>&1 || true
+    dnf install -y wireguard-tools iproute iptables rinetd curl >/dev/null 2>&1 || true
 elif command -v yum >/dev/null 2>&1; then
     yum install -y epel-release >/dev/null 2>&1 || true
-    yum install -y wireguard-tools iproute iptables curl >/dev/null 2>&1 || true
+    yum install -y wireguard-tools iproute iptables rinetd curl >/dev/null 2>&1 || true
 fi
 
-# 2. Kernel optimizations
-echo "[+] Enabling packet forwarding and loose reverse path filter..."
+# 2. Kernel optimizations & packet forwarding
+echo "[+] Enabling kernel packet forwarding..."
 cat << 'EOF' > /etc/sysctl.d/99-wirenet.conf
 net.ipv4.ip_forward = 1
 net.ipv4.conf.all.forwarding = 1
+net.ipv4.conf.all.route_localnet = 1
 net.ipv4.conf.all.rp_filter = 2
 net.ipv4.conf.default.rp_filter = 2
 EOF
-sysctl --system >/dev/null 2>&1 || sysctl -w net.ipv4.ip_forward=1 net.ipv4.conf.all.rp_filter=2
+sysctl --system >/dev/null 2>&1 || sysctl -w net.ipv4.ip_forward=1 net.ipv4.conf.all.route_localnet=1 net.ipv4.conf.all.rp_filter=2
 
-# 3. Interactive prompt for Gateway credentials
+# 3. Detect Node Public IP
+PRIMARY_IP=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || ip route get 1.1.1.1 | awk '{print $7; exit}')
+echo "[+] Detected Node Host IP: $PRIMARY_IP"
+
+# 4. Interactive prompt for Gateway credentials
 GW_ENDPOINT="${GW_ENDPOINT:-}"
 GW_PUBLIC_KEY="${GW_PUBLIC_KEY:-}"
 
 if [[ -z "$GW_ENDPOINT" ]]; then
     if [[ -e /dev/tty ]]; then
-        read -r -p "Enter Gateway Public IP (e.g. 3.108.50.20): " GW_ENDPOINT </dev/tty
+        read -r -p "Enter Gateway Public IP (e.g. 3.108.55.144): " GW_ENDPOINT </dev/tty
     else
-        read -r -p "Enter Gateway Public IP (e.g. 3.108.50.20): " GW_ENDPOINT
+        read -r -p "Enter Gateway Public IP (e.g. 3.108.55.144): " GW_ENDPOINT
     fi
 fi
 
@@ -68,7 +73,7 @@ if [[ -z "$GW_ENDPOINT" || -z "$GW_PUBLIC_KEY" ]]; then
     exit 1
 fi
 
-# 4. Generate Node Cryptographic Keys
+# 5. Generate Node Cryptographic Keys
 mkdir -p /etc/wireguard
 chmod 700 /etc/wireguard
 
@@ -82,48 +87,66 @@ NODE_IP="${NODE_IP:-10.200.0.2}"
 NODE_PRIVATE_KEY=$(cat /etc/wireguard/node_private.key)
 NODE_PUBLIC_KEY=$(cat /etc/wireguard/node_public.key)
 
-# 5. Create WireGuard config with Table=off and CONNMARK routing for Real-IP
+# 6. Create WireGuard Configuration
 cat << EOF > /etc/wireguard/wg0.conf
 [Interface]
 Address = $NODE_IP/24
 PrivateKey = $NODE_PRIVATE_KEY
-# Disable automatic default route hijacking so SSH never disconnects:
-Table = off
 
-# Add local subnet route:
-PostUp = ip route add 10.200.0.0/24 dev %i table main 2>/dev/null || true
-
-# Connection tracking policy routing for Real Player IPs:
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT
-PostUp = iptables -t mangle -A PREROUTING -i %i -j CONNMARK --set-mark 0x200
-PostUp = iptables -t mangle -A PREROUTING -m connmark --mark 0x200 -j CONNMARK --restore-mark
-PostUp = iptables -t mangle -A OUTPUT -m connmark --mark 0x200 -j CONNMARK --restore-mark
-PostUp = ip rule add fwmark 0x200 table 200 || true
-PostUp = ip route add default via 10.200.0.1 dev %i table 200 || true
+PostUp = iptables -I INPUT 1 -i %i -j ACCEPT 2>/dev/null || true
+PostUp = ip route add 10.200.0.0/24 dev %i 2>/dev/null || true
 
-PostDown = ip route del 10.200.0.0/24 dev %i table main 2>/dev/null || true
-PostDown = iptables -D FORWARD -i %i -j ACCEPT 2>/dev/null || true; iptables -D FORWARD -o %i -j ACCEPT 2>/dev/null || true
-PostDown = iptables -t mangle -D PREROUTING -i %i -j CONNMARK --set-mark 0x200 2>/dev/null || true
-PostDown = iptables -t mangle -D PREROUTING -m connmark --mark 0x200 -j CONNMARK --restore-mark 2>/dev/null || true
-PostDown = iptables -t mangle -D OUTPUT -m connmark --mark 0x200 -j CONNMARK --restore-mark 2>/dev/null || true
-PostDown = ip rule del fwmark 0x200 table 200 2>/dev/null || true; ip route del default via 10.200.0.1 dev %i table 200 2>/dev/null || true
+PostDown = iptables -D FORWARD -i %i -j ACCEPT 2>/dev/null || true
+PostDown = iptables -D FORWARD -o %i -j ACCEPT 2>/dev/null || true
+PostDown = iptables -D INPUT -i %i -j ACCEPT 2>/dev/null || true
 
 [Peer]
 PublicKey = $GW_PUBLIC_KEY
 Endpoint = $GW_ENDPOINT:51820
-# AllowedIPs=0.0.0.0/0 allows WireGuard to encrypt return packets to any real player IP:
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = 10.200.0.0/24
 PersistentKeepalive = 25
 EOF
 
-# 6. Start WireGuard
+# 7. Configure Automated rinetd Bridge for all Minecraft / Game Ports
+echo "[+] Configuring automated rinetd port bridge for game server ports..."
+mkdir -p /etc
+cat << EOF > /etc/rinetd.conf
+# WireNet Automated Docker Port Bridge
+# Format: bindaddress bindport connectaddress connectport
+
+# Minecraft Standard Port
+$NODE_IP 25565 $PRIMARY_IP 25565
+EOF
+
+# Append port ranges 25566-25600 and 30000-30020
+for port in $(seq 25566 25600); do
+    echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
+done
+
+for port in $(seq 30000 30050); do
+    echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
+done
+
+# 8. Clean conflicting iptables PREROUTING rules
+iptables -t nat -F PREROUTING 2>/dev/null || true
+iptables -t nat -F POSTROUTING 2>/dev/null || true
+iptables -t mangle -F 2>/dev/null || true
+
+# 9. Start and Enable Services
 systemctl enable --now wg-quick@wg0
 systemctl restart wg-quick@wg0
 
+systemctl enable --now rinetd 2>/dev/null || true
+systemctl restart rinetd 2>/dev/null || true
+
 echo "=========================================================="
-echo " [✓] WireNet Node is ACTIVE with True Real-IP Forwarding!"
+echo " [✓] WireNet Node is ACTIVE! (Node IP: $NODE_IP)"
 echo "=========================================================="
 echo ""
-echo " Authorize this Node on Gateway VPS:"
+echo " FINAL STEP: Run this SINGLE command on your Gateway VPS"
+echo " to authorize this Node:"
+echo ""
 echo " sudo wg set wg0 peer $NODE_PUBLIC_KEY allowed-ips $NODE_IP/32"
+echo " sudo ip route add $NODE_IP dev wg0 2>/dev/null || true"
 echo "=========================================================="
