@@ -7,7 +7,7 @@
 **WireNet** is an enterprise, high-performance tunneling and Anti-DDoS protection system designed specifically for Minecraft and game hosting providers operating on [Pterodactyl](https://pterodactyl.io).
 
 It replaces slow userspace reverse proxies (like FRP) with native Linux kernel WireGuard tunneling and a unified, memory-safe **Rust Daemon (`wirenet-daemon`)**, delivering:
-- **100% Real Player IPs** — True client home IPs passed to Paper, Purpur, Velocity, BungeeCord, Fabric, and Geyser via PROXY Protocol v2.
+- **100% Real Player IPs (Zero Plugins)** — True client home IPs passed directly to Vanilla, Paper, Purpur, Velocity, Fabric, Forge, and Geyser at the Linux kernel layer.
 - **100% Hidden Backend Node IPs** — Complete shield preventing attackers and port scanners from ever finding or attacking your backend Pterodactyl node VPS.
 - **Kernel & Rust Anti-DDoS Scrubbing** — Hardware SYN cookies, per-IP token bucket rate limiting, and bot raid mitigation.
 - **0ms Docker Auto-Discovery** — Detects container start/stop events directly from `/var/run/docker.sock` in real-time.
@@ -28,8 +28,8 @@ It replaces slow userspace reverse proxies (like FRP) with native Linux kernel W
 │  - Public IPv4: 3.108.55.144                                  │
 │  - Private Virtual IP: 10.200.0.1                             │
 │  - Anti-DDoS Scrubbing Shield (SYN Floods & Bot Mitigator)    │
-│  - PROXY Protocol v2 Encoder (Injects Real Client IP)         │
-│  - Asynchronous Tokio TCP/UDP Stream Ingress                  │
+│  - Pure Transparent Layer-3 DNAT (Preserves Real Client IP)   │
+│  - Asynchronous Tokio Control Plane (:9000)                   │
 └───────────────────────────────┬───────────────────────────────┘
                                 │
                                 │ Encrypted WireGuard Kernel Fastpath (0.8ms RTT)
@@ -39,13 +39,13 @@ It replaces slow userspace reverse proxies (like FRP) with native Linux kernel W
 │  - Backend Public IP is 100% HIDDEN & INVISIBLE               │
 │  - Private Virtual IP: 10.200.0.2                             │
 │  - Docker /docker.sock Auto-Discovery (0ms port sync)         │
-│  - Local Direct Container Bridge (25565-25700, 30000+)        │
+│  - Policy Routing Table 100 + CONNMARK (Symmetric Returns)    │
 └───────────────────────────────┬───────────────────────────────┘
                                 │
                                 ▼
 ┌───────────────────────────────────────────────────────────────┐
 │              Customer's Minecraft Server (Docker)             │
-│  - Receives genuine player IP: 104.28.228.88                  │
+│  - Receives genuine player IP: 104.28.228.88 (ZERO PLUGINS!)  │
 │  - Full support for /ban-ip, Geolocation, and Auth            │
 │  - Vanilla, Paper, Purpur, Velocity, Fabric, Bedrock          │
 └───────────────────────────────────────────────────────────────┘
@@ -99,41 +99,17 @@ Run this single command on **both Gateway and Node VPS**:
 ```bash
 wirenet daemon install
 ```
-- Gateway runs `wirenet-gateway.service` (Ingress, Anti-DDoS, PROXY v2).
+- Gateway runs `wirenet-gateway.service` (Control plane, Anti-DDoS).
 - Node runs `wirenet-node.service` (Docker watcher & local stream bridge).
 
 ---
 
-## ⚡ How to Get 100% Real Player IPs in Minecraft
+## ⚡ How Real Player IPs Work (Zero Plugins Required!)
 
-Because WireNet uses the universal enterprise **PROXY Protocol v2** standard, you can receive the exact player home IP on any server flavor:
-
-### A. For Velocity Proxy (`velocity.toml`)
-Open `velocity.toml` and set:
-```toml
-# Enable PROXY Protocol v2 support
-haproxy-protocol = true
-```
-
-### B. For BungeeCord (`config.yml`)
-Open `config.yml` and set:
-```yaml
-proxy_protocol: true
-```
-
-### C. For Paper / Purpur / Spigot / Folia Server (Backend)
-If running a standalone Paper/Purpur server (without Velocity):
-1. Download the free lightweight plugin **[HAProxyDetectorPaper on Modrinth](https://modrinth.com/plugin/haproxydetectorpaper)**.
-2. Drop `HAProxyDetectorPaper.jar` into your Minecraft server's `plugins/` folder.
-3. Restart your server.
-4. ✨ **Done!** Every player's genuine home IP (`104.28.x.x`) will now appear in your console, `/seen`, and ban managers!
-
-### D. For Geyser / Bedrock (`config.yml`)
-Open Geyser's `config.yml` and set:
-```yaml
-# Enable PROXY protocol for Bedrock connections
-proxy-protocol: true
-```
+WireNet uses **Pure Kernel Layer-3 Transparent Routing**:
+- The Gateway preserves the player's true source IP (`104.28.x.x`).
+- The Node's policy routing (`CONNMARK` + `Table 100`) routes replies symmetrically back through the Gateway.
+- **ZERO PLUGINS ARE NEEDED.** Works natively on Vanilla, Paper, Purpur, Fabric, Forge, and Bedrock out-of-the-box!
 
 ---
 

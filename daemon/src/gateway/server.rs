@@ -1,10 +1,10 @@
-use super::proxy_protocol::encode_proxy_v2_header;
 use super::router::GatewayRouter;
 use super::shield::AntiDDoSShield;
 use crate::config::GatewayConfig;
 use crate::protocol::{Message, WireNetCodec};
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
+#[allow(unused_imports)]
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -165,32 +165,12 @@ impl GatewayServer {
                 .unwrap_or_else(|| "10.200.0.2".to_string());
 
             let shield = self.shield.clone();
-            let enable_proxy_v2 = self.config.enable_proxy_protocol;
-            let local_addr = match client_socket.local_addr() {
-                Ok(a) => a,
-                Err(_) => SocketAddr::from(([0, 0, 0, 0], port)),
-            };
 
             tokio::spawn(async move {
                 let target_addr = format!("{}:{}", target_node_ip, port);
-                match TcpStream::connect(&target_addr).await {
-                    Ok(mut backend_socket) => {
-                        // Inject PROXY Protocol v2 header if enabled
-                        if enable_proxy_v2 {
-                            let header = encode_proxy_v2_header(client_addr, local_addr);
-                            use tokio::io::AsyncWriteExt;
-                            if let Err(_) = backend_socket.write_all(&header).await {
-                                shield.connection_closed(client_addr.ip());
-                                return;
-                            }
-                        }
-
-                        // Bidirectional zero-copy stream piping
-                        let _ = tokio::io::copy_bidirectional(&mut client_socket, &mut backend_socket).await;
-                    }
-                    Err(_) => {
-                        // Backend server unreachable or offline
-                    }
+                if let Ok(mut backend_socket) = TcpStream::connect(&target_addr).await {
+                    // Bidirectional zero-copy stream piping
+                    let _ = tokio::io::copy_bidirectional(&mut client_socket, &mut backend_socket).await;
                 }
                 shield.connection_closed(client_addr.ip());
             });

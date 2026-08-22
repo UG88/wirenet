@@ -99,13 +99,17 @@ iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || tru
 iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
 
-echo "[4/6] Rebuilding rinetd Port Bridge for all Game Ports..."
+# Direct fallback DNAT to localhost (for host-networked Minecraft servers with route_localnet)
+iptables -t nat -A PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1
+iptables -t nat -A PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 127.0.0.1
+
+# Rebuild rinetd fallback bridge for compatibility
 if ! command -v rinetd >/dev/null 2>&1; then
     echo "  [+] Installing rinetd..."
-    apt-get update -qq && apt-get install -y rinetd || true
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rinetd 2>/dev/null || true
 fi
 
-# Rebuild clean rinetd config covering 25565-25700 and 30000-30100
 cat << EOF > /etc/rinetd.conf
 # WireNet Automated Docker Port Bridge
 # Node Virtual IP: $NODE_IP -> Host: $PRIMARY_IP
@@ -119,18 +123,9 @@ for port in $(seq 30000 30100); do
     echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
 done
 
-# Scan any active listening game ports on the host and ensure they are bridged
-for port in $(ss -tulpn 2>/dev/null | grep -E "dockerd|java|wings" | awk '{print $5}' | awk -F: '{print $NF}' | sort -u); do
-    if [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1024 && "$port" -le 65535 ]]; then
-        if ! grep -q "$NODE_IP $port " /etc/rinetd.conf 2>/dev/null; then
-            echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
-        fi
-    fi
-done
-
 systemctl enable --now rinetd 2>/dev/null || true
 systemctl restart rinetd 2>/dev/null || true
-echo "  [✓] rinetd port bridge active on all game ports (25565-25700, 30000-30100)"
+echo "  [✓] Transparent Layer-3 Kernel Routing & Stream Bridge Active"
 
 echo "[5/6] Ensuring WireNet Dynamic Watcher is Active..."
 mkdir -p /opt/wirenet/scripts

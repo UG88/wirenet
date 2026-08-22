@@ -45,7 +45,6 @@ SCRIPTS=(
     "troubleshoot-gateway.sh"
     "troubleshoot-node.sh"
     "wirenet-watcher.sh"
-    "setup-proxy-protocol.sh"
     "install-daemon.sh"
     "forward-port.sh"
     "add-ip-mapping.sh"

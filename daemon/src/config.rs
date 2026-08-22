@@ -11,7 +11,6 @@ pub struct GatewayConfig {
     pub shield_mode: String,
     pub syn_rate_limit: u32,
     pub max_connections_per_ip: u32,
-    pub enable_proxy_protocol: bool,
 }
 
 impl Default for GatewayConfig {
@@ -25,7 +24,6 @@ impl Default for GatewayConfig {
             shield_mode: "standard".to_string(),
             syn_rate_limit: 25,
             max_connections_per_ip: 50,
-            enable_proxy_protocol: false,
         }
     }
 }
