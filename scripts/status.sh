@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet Status & Telemetry Dashboard (Supports All or Individual Checks)
+# WireNet Status & Telemetry Dashboard (Supports All, Modular, and Live Watch)
 # Developed by UG88 | https://github.com/UG88/wirenet
 # ==============================================================================
 
@@ -30,7 +30,7 @@ else
     ROLE="PTERODACTYL NODE VPS (Spoke)"
 fi
 
-PUBLIC_IP=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || echo "UNKNOWN")
+PUBLIC_IP=$(curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || echo "UNKNOWN")
 WG_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "NOT CONFIGURED")
 
 show_header() {
@@ -87,31 +87,69 @@ show_firewall() {
         echo -e "\n${BOLD}--- [4] Minecraft Anti-DDoS Shield Status ---${NC}"
         if iptables -L INPUT -n 2>/dev/null | grep -q "MC_TCP_FILTER"; then
             echo -e "  Shield Status   : ${GREEN}${BOLD}ENABLED (Hardware SYN Cookies & Rate Limiting Active)${NC}"
-            echo -e "  Dropped Packets :"
-            iptables -L MC_TCP_FILTER -n -v 2>/dev/null | grep "DROP" | head -n 3 || echo "  (0 dropped attacks)"
         else
             echo -e "  Shield Status   : ${YELLOW}DISABLED (Pass-Through Mode)${NC}"
         fi
     fi
 }
 
-# Execution based on flag
-show_header
+show_live_telemetry() {
+    trap 'break' INT
+    while true; do
+        clear
+        echo -e "${CYAN}${BOLD}"
+        echo "================================================================================"
+        echo "          📊  WireNet Live Real-Time Telemetry Dashboard (Refreshing 2s)        "
+        echo "                    [ Press 'q' or Ctrl+C to return to menu ]                   "
+        echo "================================================================================"
+        echo -e "${NC}"
+        echo -e "Server Role       : ${BOLD}${ROLE}${NC}"
+        echo -e "Public IPv4       : ${BOLD}${PUBLIC_IP}${NC}"
+        echo -e "Tunnel IPv4 (wg0) : ${BOLD}${GREEN}${WG_IP}${NC}"
+        
+        show_peers
+        show_latency
+        show_ports
+        show_firewall
+        
+        echo ""
+        echo "================================================================================"
+        
+        KEY=""
+        if [[ -e /dev/tty ]]; then
+            read -rsn1 -t 2 KEY </dev/tty 2>/dev/null || true
+        else
+            read -rsn1 -t 2 KEY 2>/dev/null || true
+        fi
+        if [[ "${KEY:-}" =~ ^[qQ]$ ]]; then
+            break
+        fi
+    done
+    trap - INT
+}
 
 case "$MODE" in
     peers|wg)
+        show_header
         show_peers
         ;;
     latency|ping)
+        show_header
         show_latency
         ;;
     ports|servers)
+        show_header
         show_ports
         ;;
     firewall|shield)
+        show_header
         show_firewall
         ;;
+    live|watch)
+        show_live_telemetry
+        ;;
     all|*)
+        show_header
         show_peers
         show_latency
         show_ports
@@ -120,4 +158,3 @@ case "$MODE" in
 esac
 
 echo ""
-echo "=========================================================="

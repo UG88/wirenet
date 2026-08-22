@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # WireNet Firewall Controller (Zero-Downtime Dynamic Shield Manager)
+# Developed by UG88 | https://github.com/UG88/wirenet
 # Manage, toggle ON/OFF, and monitor TCP & UDP Minecraft Anti-DDoS Filters
 # ==============================================================================
 
@@ -66,17 +67,51 @@ function show_status() {
     echo "=========================================================="
     echo " WireNet Minecraft Firewall & Anti-DDoS Status"
     echo "=========================================================="
-    if iptables -L INPUT -n | grep -q "MC_TCP_FILTER"; then
+    if iptables -L INPUT -n 2>/dev/null | grep -q "MC_TCP_FILTER"; then
         echo " Shield Status: [ ACTIVE / PROTECTED ]"
         echo ""
         echo " Live Filter Statistics (Dropped Packets & Traffic):"
-        iptables -L MC_TCP_FILTER -n -v --line-numbers
+        iptables -L MC_TCP_FILTER -n -v --line-numbers 2>/dev/null
         echo ""
-        iptables -L MC_UDP_FILTER -n -v --line-numbers
+        iptables -L MC_UDP_FILTER -n -v --line-numbers 2>/dev/null
     else
-        echo " Shield Status: [ DISABLED ]"
+        echo " Shield Status: [ DISABLED / PASS-THROUGH ]"
     fi
     echo "=========================================================="
+}
+
+function show_live_status() {
+    trap 'break' INT
+    while true; do
+        clear
+        echo "================================================================================"
+        echo " 🛡️  WireNet Live Real-Time Anti-DDoS Attack & Packet Monitor (Refreshing 1s)   "
+        echo "                   [ Press 'q' or Ctrl+C to return to menu ]                    "
+        echo "================================================================================"
+        if iptables -L INPUT -n 2>/dev/null | grep -q "MC_TCP_FILTER"; then
+            echo " Shield Status: [ ACTIVE / PROTECTED ]"
+            echo ""
+            echo "--- TCP Filter Statistics (SYN Cookies, Malformed Drops, Rate Limits) ---"
+            iptables -L MC_TCP_FILTER -n -v --line-numbers 2>/dev/null || true
+            echo ""
+            echo "--- UDP Filter Statistics (Bedrock Reflection & Flood Drops) ---"
+            iptables -L MC_UDP_FILTER -n -v --line-numbers 2>/dev/null || true
+        else
+            echo " Shield Status: [ DISABLED / PASS-THROUGH ]"
+        fi
+        echo "================================================================================"
+
+        KEY=""
+        if [[ -e /dev/tty ]]; then
+            read -rsn1 -t 1 KEY </dev/tty 2>/dev/null || true
+        else
+            read -rsn1 -t 1 KEY 2>/dev/null || true
+        fi
+        if [[ "${KEY:-}" =~ ^[qQ]$ ]]; then
+            break
+        fi
+    done
+    trap - INT
 }
 
 case "${1:-status}" in
@@ -92,12 +127,11 @@ case "${1:-status}" in
     status)
         show_status
         ;;
+    live|watch)
+        show_live_status
+        ;;
     *)
-        echo "Usage: sudo $0 {enable|disable|strict|status}"
-        echo "  enable  - Enable standard Minecraft TCP & UDP protection"
-        echo "  strict  - Enable high-security anti-bot mode during active attacks"
-        echo "  disable - Temporarily turn off filters (zero player drop)"
-        echo "  status  - View live dropped attack packet counters"
+        echo "Usage: sudo $0 {enable|disable|strict|status|live}"
         exit 1
         ;;
 esac

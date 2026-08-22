@@ -28,7 +28,7 @@ fi
 REPO_BASE="https://raw.githubusercontent.com/UG88/wirenet/main"
 INSTALL_DIR="/opt/wirenet"
 BIN_PATH="/usr/local/bin/wirenet"
-CURRENT_VERSION="v1.2.0"
+CURRENT_VERSION="v1.2.1"
 
 # Auto-install to /usr/local/bin if running from curl
 if [[ ! -f "$BIN_PATH" || ! -d "$INSTALL_DIR" ]]; then
@@ -56,6 +56,39 @@ fetch_script() {
     else
         curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/scripts/${script_name}?$(date +%s)" | sudo bash -s -- "$@"
     fi
+}
+
+# Header with fixed ASCII Art and UG88 Author branding
+draw_header() {
+    clear
+    echo -e "${CYAN}${BOLD}"
+    cat << 'EOF'
+================================================================================
+  __          ___          _   _      _   
+  \ \        / (_)        | \ | |    | |  
+   \ \  /\  / / _ _ __ ___|  \| | ___| |_ 
+    \ \/  \/ / | | '__/ _ \ . ` |/ _ \ __|
+     \  /\  /  | | | |  __/ |\  |  __/ |_ 
+      \/  \/   |_|_|  \___|_| \_|\___|\__|
+
+     Kernel-Level Minecraft Ingress & Anti-DDoS Shield for Pterodactyl
+                Developed by UG88 | GitHub: UG88/wirenet
+================================================================================
+EOF
+    echo -e "${NC}"
+}
+
+# Helper function to print a dynamic info/guide box
+show_guide() {
+    local title="$1"
+    local desc="$2"
+    local example="${3:-}"
+    echo -e "${YELLOW}${BOLD}┌── ℹ️  ${title} ──────────────────────────────────────────${NC}"
+    echo -e "${YELLOW}│${NC} ${desc}"
+    if [[ -n "$example" ]]; then
+        echo -e "${YELLOW}│${NC} ${CYAN}${BOLD}Example:${NC} ${example}"
+    fi
+    echo -e "${YELLOW}└───────────────────────────────────────────────────────────────────${NC}\n"
 }
 
 # Auto-Update System
@@ -94,7 +127,6 @@ update_wirenet() {
         chmod 755 "${INSTALL_DIR}/scripts/${script}" 2>/dev/null || true
     done
 
-    # Update global command wrapper
     cat << 'EOF' > "${BIN_PATH}"
 #!/usr/bin/env bash
 if [[ $EUID -ne 0 ]]; then
@@ -111,44 +143,12 @@ EOF
     exec "${BIN_PATH}"
 }
 
-# Header with fixed ASCII Art and UG88 Author branding
-draw_header() {
-    clear
-    echo -e "${CYAN}${BOLD}"
-    cat << 'EOF'
-================================================================================
-  __          ___          _   _      _   
-  \ \        / (_)        | \ | |    | |  
-   \ \  /\  / / _ _ __ ___|  \| | ___| |_ 
-    \ \/  \/ / | | '__/ _ \ . ` |/ _ \ __|
-     \  /\  /  | | | |  __/ |\  |  __/ |_ 
-      \/  \/   |_|_|  \___|_| \_|\___|\__|
-
-     Kernel-Level Minecraft Ingress & Anti-DDoS Shield for Pterodactyl
-                Developed by UG88 | GitHub: UG88/wirenet
-================================================================================
-EOF
-    echo -e "${NC}"
-}
-
-# Helper function to print an info/guide box
-show_guide() {
-    local title="$1"
-    local desc="$2"
-    local example="$3"
-    echo -e "\n${YELLOW}${BOLD}┌── ℹ️  ${title} ──────────────────────────────────────────${NC}"
-    echo -e "${YELLOW}│${NC} ${desc}"
-    if [[ -n "$example" ]]; then
-        echo -e "${YELLOW}│${NC} ${CYAN}${BOLD}Example:${NC} ${example}"
-    fi
-    echo -e "${YELLOW}└───────────────────────────────────────────────────────────────────${NC}\n"
-}
-
 # Submenu: Status & Telemetry Dashboard
 status_menu() {
     local STAT_CHOICE=0
     local STAT_OPTIONS=(
-        "View Complete Telemetry Dashboard (All Metrics at Once)"
+        "View Live Real-Time Telemetry Dashboard (Auto-Refreshing Loop)"
+        "View One-Shot Telemetry Summary (All Metrics at Once)"
         "Check WireGuard Interface & Handshake Telemetry Only"
         "Check Live Tunnel Latency & Ping to Nodes Only"
         "Inspect Active Minecraft & Game Server Ports Only"
@@ -156,14 +156,22 @@ status_menu() {
         "Back to Main Menu"
     )
 
+    local STAT_DESCS=(
+        "Starts a live, real-time dashboard updating every 2s showing active peers, transfer counters, latency, and ports."
+        "Runs a single snapshot check of all telemetry metrics (WireGuard, latency, ports, shield)."
+        "Inspects wireguard wg0 status, cryptographic public keys, and last handshake timestamp."
+        "Tests sub-millisecond ICMP round-trip latency to all connected backend nodes."
+        "Scans all listening TCP/UDP ports (25565, 25566-25600, 30000+) on this host."
+        "Displays real-time dropped attack packet counters from the hardware SYN cookie filter."
+        "Return to the main WireNet control center."
+    )
+
     while true; do
         draw_header
         echo -e "${YELLOW}${BOLD}  📊  LIVE STATUS & TELEMETRY SUBMENU (by UG88)${NC}"
-        show_guide "Telemetry Options Guide" \
-                   "Choose whether to view all telemetry at once or inspect individual network subsystems." \
-                   "Sub-millisecond ping, handshakes, and port bindings are tested in real time."
+        show_guide "${STAT_OPTIONS[$STAT_CHOICE]}" "${STAT_DESCS[$STAT_CHOICE]}"
 
-        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} and press ${BOLD}ENTER${NC} (or type a number):\n"
+        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} to select, press ${BOLD}ENTER${NC}:\n"
 
         for i in "${!STAT_OPTIONS[@]}"; do
             if [[ $i -eq $STAT_CHOICE ]]; then
@@ -197,47 +205,53 @@ status_menu() {
                 ;;
             ""|$'\n') # ENTER
                 case $STAT_CHOICE in
-                    0) fetch_script "status.sh" all ; break ;;
-                    1) fetch_script "status.sh" peers ; break ;;
-                    2) fetch_script "status.sh" latency ; break ;;
-                    3) fetch_script "status.sh" ports ; break ;;
-                    4) fetch_script "status.sh" firewall ; break ;;
-                    5) return ;;
+                    0) fetch_script "status.sh" live ;;
+                    1) fetch_script "status.sh" all ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    2) fetch_script "status.sh" peers ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    3) fetch_script "status.sh" latency ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    4) fetch_script "status.sh" ports ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    5) fetch_script "status.sh" firewall ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    6) return ;;
                 esac
                 ;;
-            1) fetch_script "status.sh" all ; break ;;
-            2) fetch_script "status.sh" peers ; break ;;
-            3) fetch_script "status.sh" latency ; break ;;
-            4) fetch_script "status.sh" ports ; break ;;
-            5) fetch_script "status.sh" firewall ; break ;;
-            6|0|[qQ]) return ;;
+            1) fetch_script "status.sh" live ;;
+            2) fetch_script "status.sh" all ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            3) fetch_script "status.sh" peers ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            4) fetch_script "status.sh" latency ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            5) fetch_script "status.sh" ports ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            6) fetch_script "status.sh" firewall ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            7|0|[qQ]) return ;;
         esac
     done
-
-    echo ""
-    read -r -p "Press ENTER to return to menu..." </dev/tty || true
 }
 
 # Submenu: Doctor & Diagnostics
 doctor_menu() {
     local DOC_CHOICE=0
     local DOC_OPTIONS=(
-        "Run Complete 6-Point Doctor Scan (All Checks + Auto-Fix)"
-        "Inspect Kernel Packet Forwarding & Sysctl Settings"
-        "Inspect WireGuard Interface & Cryptographic Keys"
-        "Inspect Docker Container Bridge & rinetd Port Maps"
-        "Inspect Gateway Port Forwarding & NAT Table"
+        "Run Complete 6-Point Doctor Scan (All Checks + Auto-Repair)"
+        "Inspect Kernel Packet Forwarding & Sysctl Settings Only"
+        "Inspect WireGuard Interface & Cryptographic Keys Only"
+        "Inspect Docker Container Bridge & rinetd Port Maps Only"
+        "Inspect Gateway Port Forwarding & NAT Table Only"
         "Back to Main Menu"
+    )
+
+    local DOC_DESCS=(
+        "Scans all 6 subsystems (Kernel, WireGuard, Handshakes, Ping, Docker, NAT) and automatically repairs any issues found."
+        "Verifies that net.ipv4.ip_forward=1 and route_localnet=1 are enabled in the Linux kernel."
+        "Inspects wireguard keys, interface status, and active peer IP allocations."
+        "Verifies that Docker containers on Pterodactyl are accessible via the rinetd port bridge."
+        "Inspects iptables PREROUTING DNAT and POSTROUTING MASQUERADE tables."
+        "Return to the main WireNet control center."
     )
 
     while true; do
         draw_header
-        echo -e "${YELLOW}${BOLD}  🩺  WIREDNET DOCTOR & SYSTEM INSPECTOR SUBMENU${NC}"
-        show_guide "Doctor Diagnostic Guide" \
-                   "Performs deep health inspections on kernel, tunnel, Docker bindings, and routing." \
-                   "If any issue is detected, WireNet Doctor offers an instant 1-click auto-repair."
+        echo -e "${YELLOW}${BOLD}  🩺  WIRENET DOCTOR & SYSTEM INSPECTOR SUBMENU${NC}"
+        show_guide "${DOC_OPTIONS[$DOC_CHOICE]}" "${DOC_DESCS[$DOC_CHOICE]}"
 
-        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} and press ${BOLD}ENTER${NC} (or type a number):\n"
+        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} to select, press ${BOLD}ENTER${NC}:\n"
 
         for i in "${!DOC_OPTIONS[@]}"; do
             if [[ $i -eq $DOC_CHOICE ]]; then
@@ -271,59 +285,56 @@ doctor_menu() {
                 ;;
             ""|$'\n') # ENTER
                 case $DOC_CHOICE in
-                    0) fetch_script "doctor.sh" ; break ;;
+                    0) fetch_script "doctor.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
                     1)
                         echo -e "\n${BOLD}--- Kernel IP Forwarding & Localnet Settings ---${NC}"
                         sysctl net.ipv4.ip_forward net.ipv4.conf.all.route_localnet net.ipv4.conf.all.rp_filter
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     2)
                         echo -e "\n${BOLD}--- WireGuard Configuration & Status ---${NC}"
                         wg show wg0 2>/dev/null || echo "Interface wg0 is down."
                         ip addr show dev wg0 2>/dev/null || true
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     3)
                         echo -e "\n${BOLD}--- Docker & rinetd Port Bridge Inspection ---${NC}"
                         systemctl status rinetd --no-pager 2>/dev/null || true
                         cat /etc/rinetd.conf 2>/dev/null | head -n 15 || echo "No rinetd.conf found."
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     4)
                         echo -e "\n${BOLD}--- Gateway NAT Table & Port Forwarding Rules ---${NC}"
                         iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null | grep -E "10.200|dpt" || echo "No DNAT rules."
                         iptables -t nat -L POSTROUTING -n -v --line-numbers 2>/dev/null | grep "MASQUERADE" || true
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     5) return ;;
                 esac
                 ;;
-            1) fetch_script "doctor.sh" ; break ;;
+            1) fetch_script "doctor.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
             2)
                 sysctl net.ipv4.ip_forward net.ipv4.conf.all.route_localnet net.ipv4.conf.all.rp_filter
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             3)
                 wg show wg0 2>/dev/null || echo "Interface wg0 is down."
                 ip addr show dev wg0 2>/dev/null || true
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             4)
                 systemctl status rinetd --no-pager 2>/dev/null || true
                 cat /etc/rinetd.conf 2>/dev/null | head -n 15 || echo "No rinetd.conf found."
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             5)
                 iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null | grep -E "10.200|dpt" || echo "No DNAT rules."
                 iptables -t nat -L POSTROUTING -n -v --line-numbers 2>/dev/null | grep "MASQUERADE" || true
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             6|0|[qQ]) return ;;
         esac
     done
-
-    echo ""
-    read -r -p "Press ENTER to return to menu..." </dev/tty || true
 }
 
 # Submenu: Port & Multi-IP Routing
@@ -337,14 +348,20 @@ routing_menu() {
         "Back to Main Menu"
     )
 
+    local ROUTE_DESCS=(
+        "Maps a specific public port on the Gateway to a specific node IP and container port (e.g. Gateway:25567 -> Node 2:25565)."
+        "Binds secondary public IPv4 addresses on the Gateway to different backend nodes so every customer gets port 25565."
+        "Displays the active iptables DNAT table showing all mapped public ports."
+        "Clears and resets the iptables PREROUTING port forwarding table."
+        "Return to the main WireNet control center."
+    )
+
     while true; do
         draw_header
         echo -e "${YELLOW}${BOLD}  🔀  CUSTOM PORT & MULTI-IP ROUTING SUBMENU${NC}"
-        show_guide "Port Forwarding & Multi-IP Guide" \
-                   "Route specific Gateway ports or dedicated Public IPs directly to backend nodes." \
-                   "Allows multiple customer servers to use port 25565 on different Public IPs or ports."
+        show_guide "${ROUTE_OPTIONS[$ROUTE_CHOICE]}" "${ROUTE_DESCS[$ROUTE_CHOICE]}"
 
-        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} and press ${BOLD}ENTER${NC} (or type a number):\n"
+        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} to select, press ${BOLD}ENTER${NC}:\n"
 
         for i in "${!ROUTE_OPTIONS[@]}"; do
             if [[ $i -eq $ROUTE_CHOICE ]]; then
@@ -386,7 +403,7 @@ routing_menu() {
                         if [[ -n "$GW_PORT" && -n "$DEST_NODE" && -n "$LOCAL_PORT" ]]; then
                             fetch_script "forward-port.sh" "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
                         fi
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     1) # Multi-IP Mapping
                         echo -e "\n${BOLD}Enter Dedicated Public IP Mapping Details:${NC}"
@@ -395,18 +412,18 @@ routing_menu() {
                         if [[ -n "$DEDICATED_IP" && -n "$TARGET_NODE" ]]; then
                             fetch_script "add-ip-mapping.sh" "$DEDICATED_IP" "$TARGET_NODE"
                         fi
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     2) # List Rules
                         echo -e "\n${BOLD}--- Active DNAT & Port Forwarding Rules ---${NC}"
                         iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null | grep -E "dpt|10.200" || echo "No active port forward rules."
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     3) # Flush Rules
                         echo "[+] Flushing DNAT tables..."
                         iptables -t nat -F PREROUTING 2>/dev/null || true
                         echo -e "${GREEN}[✓] Port forwarding table reset.${NC}"
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     4) return ;;
                 esac
@@ -418,7 +435,7 @@ routing_menu() {
                 if [[ -n "$GW_PORT" && -n "$DEST_NODE" && -n "$LOCAL_PORT" ]]; then
                     fetch_script "forward-port.sh" "$GW_PORT" "$DEST_NODE" "$LOCAL_PORT"
                 fi
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             2)
                 read -r -p "1. Enter Dedicated Public IP on Gateway: " DEDICATED_IP </dev/tty
@@ -426,44 +443,49 @@ routing_menu() {
                 if [[ -n "$DEDICATED_IP" && -n "$TARGET_NODE" ]]; then
                     fetch_script "add-ip-mapping.sh" "$DEDICATED_IP" "$TARGET_NODE"
                 fi
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             3)
                 iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null | grep -E "dpt|10.200" || echo "No active port forward rules."
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             4)
                 iptables -t nat -F PREROUTING 2>/dev/null || true
                 echo -e "${GREEN}[✓] Port forwarding table reset.${NC}"
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             5|0|[qQ]) return ;;
         esac
     done
-
-    echo ""
-    read -r -p "Press ENTER to return to menu..." </dev/tty || true
 }
 
 # Submenu: Anti-DDoS Firewall
 firewall_menu() {
     local FW_CHOICE=0
     local FW_OPTIONS=(
-        "View Live Attack Telemetry & Dropped Packet Counters"
+        "View Live Real-Time Attack Telemetry (Auto-Refreshing Loop)"
+        "View One-Shot Attack Statistics Snapshot"
         "Enable Standard Protection (SYN Cookies + Rate Limiting)"
         "Enable STRICT Protection (Bot Raid & Flood Mitigation)"
         "Disable Shield (Pass-Through / Diagnostic Mode)"
         "Back to Main Menu"
     )
 
+    local FW_DESCS=(
+        "Runs a live auto-refreshing monitor updating every 1s showing real-time dropped attacks, SYN floods, and malformed packets."
+        "Displays a single snapshot of the current iptables MC_TCP_FILTER and MC_UDP_FILTER tables."
+        "Turns on hardware SYN cookies, malformed packet droppers, and 25 SYN/sec rate limiting (zero player disconnects)."
+        "Enables high-security anti-bot mode restricting connections to 10 SYN/sec per IP during heavy raids."
+        "Temporarily pauses packet filtering rules (all traffic passes directly without rate limiting)."
+        "Return to the main WireNet control center."
+    )
+
     while true; do
         draw_header
         echo -e "${YELLOW}${BOLD}  🛡️  MINECRAFT ANTI-DDOS FIREWALL SHIELD MANAGER (by UG88)${NC}"
-        show_guide "Anti-DDoS Shield Guide" \
-                   "Hardware-level SYN flood protection and malformed packet filters running in the Linux kernel." \
-                   "Switch to 'STRICT' mode during heavy bot attacks with ZERO player disconnects."
+        show_guide "${FW_OPTIONS[$FW_CHOICE]}" "${FW_DESCS[$FW_CHOICE]}"
 
-        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} and press ${BOLD}ENTER${NC} (or type a number):\n"
+        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} to select, press ${BOLD}ENTER${NC}:\n"
 
         for i in "${!FW_OPTIONS[@]}"; do
             if [[ $i -eq $FW_CHOICE ]]; then
@@ -497,23 +519,22 @@ firewall_menu() {
                 ;;
             ""|$'\n') # ENTER
                 case $FW_CHOICE in
-                    0) fetch_script "firewall.sh" status ; break ;;
-                    1) fetch_script "firewall.sh" enable ; break ;;
-                    2) fetch_script "firewall.sh" strict ; break ;;
-                    3) fetch_script "firewall.sh" disable ; break ;;
-                    4) return ;;
+                    0) fetch_script "firewall.sh" live ;;
+                    1) fetch_script "firewall.sh" status ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    2) fetch_script "firewall.sh" enable ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    3) fetch_script "firewall.sh" strict ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    4) fetch_script "firewall.sh" disable ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    5) return ;;
                 esac
                 ;;
-            1) fetch_script "firewall.sh" status ; break ;;
-            2) fetch_script "firewall.sh" enable ; break ;;
-            3) fetch_script "firewall.sh" strict ; break ;;
-            4) fetch_script "firewall.sh" disable ; break ;;
-            5|0|[qQ]) return ;;
+            1) fetch_script "firewall.sh" live ;;
+            2) fetch_script "firewall.sh" status ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            3) fetch_script "firewall.sh" enable ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            4) fetch_script "firewall.sh" strict ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            5) fetch_script "firewall.sh" disable ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            6|0|[qQ]) return ;;
         esac
     done
-
-    echo ""
-    read -r -p "Press ENTER to return to menu..." </dev/tty || true
 }
 
 # Submenu: Advanced Troubleshooting
@@ -528,14 +549,21 @@ troubleshoot_menu() {
         "Back to Main Menu"
     )
 
+    local SUB_DESCS=(
+        "Smart auto-fixer: detects whether this VPS is Gateway or Node, checks tunnel ping, cleans NAT, and auto-repairs in 1 click."
+        "Gateway repair: re-enables kernel IP forwarding, refreshes DNAT rules to 10.200.0.2, and enables MASQUERADE."
+        "Node repair: enables route_localnet=1, cleans stale NAT, and restarts rinetd Docker port bridge."
+        "Flushes PREROUTING, POSTROUTING, and MANGLE tables to remove any conflicting or broken rules."
+        "Restarts wg-quick@wg0 and rinetd services in clean dependency order."
+        "Return to the main WireNet control center."
+    )
+
     while true; do
         draw_header
         echo -e "${YELLOW}${BOLD}  🛠️  ADVANCED TROUBLESHOOTING & REPAIR MENU${NC}"
-        show_guide "Self-Healing Repair Guide" \
-                   "Diagnoses and resolves broken routes, missing keys, Docker bridge NATs, and packet drops in 1 click." \
-                   "Run 'Universal Auto-Troubleshooter' if you're not sure which server has an issue."
+        show_guide "${SUB_OPTIONS[$SUB_CHOICE]}" "${SUB_DESCS[$SUB_CHOICE]}"
 
-        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} and press ${BOLD}ENTER${NC} (or type a number):\n"
+        echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} to select, press ${BOLD}ENTER${NC}:\n"
 
         for i in "${!SUB_OPTIONS[@]}"; do
             if [[ $i -eq $SUB_CHOICE ]]; then
@@ -569,49 +597,46 @@ troubleshoot_menu() {
                 ;;
             ""|$'\n') # ENTER
                 case $SUB_CHOICE in
-                    0) fetch_script "troubleshoot.sh" ; break ;;
-                    1) fetch_script "troubleshoot-gateway.sh" ; break ;;
-                    2) fetch_script "troubleshoot-node.sh" ; break ;;
+                    0) fetch_script "troubleshoot.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    1) fetch_script "troubleshoot-gateway.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+                    2) fetch_script "troubleshoot-node.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
                     3)
                         echo "[+] Flushing stale NAT and Mangle tables..."
                         iptables -t nat -F PREROUTING 2>/dev/null || true
                         iptables -t nat -F POSTROUTING 2>/dev/null || true
                         iptables -t mangle -F 2>/dev/null || true
                         echo -e "${GREEN}[✓] IPTables tables cleared successfully.${NC}"
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     4)
                         echo "[+] Restarting all WireNet services..."
                         systemctl restart wg-quick@wg0 2>/dev/null || true
                         systemctl restart rinetd 2>/dev/null || true
                         echo -e "${GREEN}[✓] Services restarted successfully.${NC}"
-                        break
+                        read -r -p "Press ENTER to continue..." </dev/tty || true
                         ;;
                     5) return ;;
                 esac
                 ;;
-            1) fetch_script "troubleshoot.sh" ; break ;;
-            2) fetch_script "troubleshoot-gateway.sh" ; break ;;
-            3) fetch_script "troubleshoot-node.sh" ; break ;;
+            1) fetch_script "troubleshoot.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            2) fetch_script "troubleshoot-gateway.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
+            3) fetch_script "troubleshoot-node.sh" ; read -r -p "Press ENTER to continue..." </dev/tty || true ;;
             4)
                 iptables -t nat -F PREROUTING 2>/dev/null || true
                 iptables -t nat -F POSTROUTING 2>/dev/null || true
                 iptables -t mangle -F 2>/dev/null || true
                 echo -e "${GREEN}[✓] IPTables tables cleared successfully.${NC}"
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             5)
                 systemctl restart wg-quick@wg0 2>/dev/null || true
                 systemctl restart rinetd 2>/dev/null || true
                 echo -e "${GREEN}[✓] Services restarted successfully.${NC}"
-                break
+                read -r -p "Press ENTER to continue..." </dev/tty || true
                 ;;
             6|0|[qQ]) return ;;
         esac
     done
-
-    echo ""
-    read -r -p "Press ENTER to return to menu..." </dev/tty || true
 }
 
 # Main Menu Options List
@@ -628,12 +653,27 @@ MAIN_OPTIONS=(
     "Exit WireNet Manager"
 )
 
+MAIN_DESCS=(
+    "Deploys WireGuard Hub (10.200.0.1), Anti-DDoS SYN filter, and automated game port forwarding on your public AWS/Cloud VPS."
+    "Connects this Pterodactyl Node to the Gateway and bridges Minecraft Docker ports (25565-25600, 30000-30050) automatically."
+    "Inspect live real-time telemetry, active WireGuard handshakes, sub-millisecond node ping latency, and listening ports."
+    "Runs a deep 6-point health inspection on kernel, tunnel, Docker bindings, and routing with 1-click auto-repair."
+    "Real-time attack monitor and hardware SYN cookie toggles (Standard, STRICT raid protection, or Diagnostic mode)."
+    "Forward custom public ports (e.g. 25567 -> 25565) or bind secondary dedicated public IPs to specific backend nodes."
+    "Self-healing repair menu that automatically fixes missing routes, stuck Docker ports, and stale NAT tables."
+    "Checks GitHub for the latest release and updates /opt/wirenet/ and all subsystem scripts with zero downtime."
+    "Completely stops and wipes WireNet services, WireGuard keys, and restores your server to its original network state."
+    "Exit the WireNet Interactive Control Center."
+)
+
 # Main Navigation Loop
 CURRENT_INDEX=0
 
 while true; do
     draw_header
     echo -e "  Version: ${BOLD}${GREEN}${CURRENT_VERSION}${NC} | Root Command: ${CYAN}${BOLD}wirenet${NC}"
+    show_guide "${MAIN_OPTIONS[$CURRENT_INDEX]}" "${MAIN_DESCS[$CURRENT_INDEX]}"
+
     echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} to select, press ${BOLD}ENTER${NC} (or press number ${BOLD}1-9${NC}):\n"
 
     for i in "${!MAIN_OPTIONS[@]}"; do
