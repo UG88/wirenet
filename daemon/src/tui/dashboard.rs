@@ -265,10 +265,28 @@ impl TuiDashboard {
     }
 }
 
-/// Reads the real cumulative packet counter from Linux /sys/class/net/<iface>/statistics/
+/// Reads the real cumulative packet counter from Linux /proc/net/dev across wg0 and physical interfaces
 fn read_kernel_packets(iface: &str) -> u64 {
     #[cfg(unix)]
     {
+        if let Ok(content) = fs::read_to_string("/proc/net/dev") {
+            let mut total = 0u64;
+            for line in content.lines().skip(2) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 11 {
+                    let name = parts[0].trim_end_matches(':');
+                    if name == iface || name.starts_with("wg") || name.starts_with("eth") || name.starts_with("ens") || name.starts_with("enp") {
+                        let rx_pkts = parts[2].parse::<u64>().unwrap_or(0);
+                        let tx_pkts = parts[10].parse::<u64>().unwrap_or(0);
+                        total += rx_pkts + tx_pkts;
+                    }
+                }
+            }
+            if total > 0 {
+                return total;
+            }
+        }
+
         let rx_path = format!("/sys/class/net/{}/statistics/rx_packets", iface);
         let tx_path = format!("/sys/class/net/{}/statistics/tx_packets", iface);
 
