@@ -15,6 +15,8 @@ impl SetupManager {
         println!("[1/5] Enabling Kernel IP Forwarding...");
         let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
         let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.forwarding=1"]).output();
+        let _ = Command::new("systemctl").args(["stop", "rinetd", "haproxy", "wirenet-gateway"]).output();
+        let _ = Command::new("systemctl").args(["disable", "rinetd", "haproxy"]).output();
 
         // 2. Ensure WireGuard is installed
         println!("[2/5] Checking WireGuard installation...");
@@ -58,8 +60,8 @@ impl SetupManager {
             ListenPort = 51820\n\
             PrivateKey = {}\n\
             SaveConfig = false\n\n\
-            PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -I FORWARD 1 -o wg0 -j ACCEPT; iptables -t nat -A PREROUTING -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2; iptables -t nat -A PREROUTING -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2; iptables -t nat -A POSTROUTING -o {} -j MASQUERADE\n\
-            PostDown = iptables -D FORWARD -i wg0 -j ACCEPT 2>/dev/null; iptables -D FORWARD -o wg0 -j ACCEPT 2>/dev/null; iptables -t nat -D PREROUTING -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D PREROUTING -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null\n\n\
+            PostUp = iptables -I FORWARD 1 -j ACCEPT; iptables -I INPUT 1 -i wg0 -j ACCEPT; iptables -t nat -I PREROUTING 1 -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2; iptables -t nat -I PREROUTING 1 -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2; iptables -t nat -A POSTROUTING -o {} -j MASQUERADE\n\
+            PostDown = iptables -D FORWARD -j ACCEPT 2>/dev/null; iptables -D INPUT -i wg0 -j ACCEPT 2>/dev/null; iptables -t nat -D PREROUTING -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D PREROUTING -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null\n\n\
             {}",
             priv_key, ports_start, ports_end, ports_start, ports_end, default_iface, ports_start, ports_end, ports_start, ports_end, default_iface, existing_peers
         );
@@ -167,11 +169,15 @@ impl SetupManager {
         println!(" 🚀 WireNet Pterodactyl Node VPS (Spoke) 1-Click Setup");
         println!("==========================================================");
 
-        // 1. Enable IP Forwarding & Loose RP Filter
+        // 1. Enable IP Forwarding, Route Localnet & Loose RP Filter
         println!("[1/5] Enabling Kernel IP Forwarding & Policy Routing...");
         let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
+        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.route_localnet=1"]).output();
+        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.route_localnet=1"]).output();
         let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.rp_filter=2"]).output();
         let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.rp_filter=2"]).output();
+        let _ = Command::new("systemctl").args(["stop", "rinetd", "haproxy"]).output();
+        let _ = Command::new("systemctl").args(["disable", "rinetd", "haproxy"]).output();
 
         // 2. Ensure WireGuard is installed
         println!("[2/5] Checking WireGuard installation...");
@@ -213,8 +219,8 @@ impl SetupManager {
             Address = 10.200.0.2/24\n\
             PrivateKey = {}\n\
             Table = off\n\n\
-            PostUp = ip rule add fwmark 0x1 table 100 2>/dev/null || true; ip route add default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1; iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark; iptables -t mangle -A OUTPUT -j CONNMARK --restore-mark; iptables -I INPUT 1 -i wg0 -j ACCEPT; iptables -I INPUT 1 -i lo -j ACCEPT; iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -I FORWARD 1 -o wg0 -j ACCEPT; iptables -A INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP; iptables -A INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP\n\
-            PostDown = ip rule del fwmark 0x1 table 100 2>/dev/null || true; ip route del default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null || true; iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark 2>/dev/null || true; iptables -D INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true; iptables -D INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true\n\n\
+            PostUp = ip rule add fwmark 0x1 table 100 2>/dev/null || true; ip route add default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1; iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark; iptables -t mangle -A OUTPUT -j CONNMARK --restore-mark; iptables -I INPUT 1 -i wg0 -j ACCEPT; iptables -I INPUT 1 -i lo -j ACCEPT; iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -I FORWARD 1 -o wg0 -j ACCEPT; iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true; iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1; iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1; iptables -A INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP; iptables -A INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP\n\
+            PostDown = ip rule del fwmark 0x1 table 100 2>/dev/null || true; ip route del default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null || true; iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1 2>/dev/null || true; iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1 2>/dev/null || true; iptables -D INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true; iptables -D INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true\n\n\
             [Peer]\n\
             PublicKey = {}\n\
             Endpoint = {}:51820\n\
