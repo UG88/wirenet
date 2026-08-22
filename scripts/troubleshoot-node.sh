@@ -78,6 +78,31 @@ done
 systemctl restart rinetd 2>/dev/null || true
 echo "  [✓] rinetd port bridge active on all game ports (25565-25700, 30000-30100)"
 
+# Ensure dynamic watcher is running
+mkdir -p /opt/wirenet/scripts
+curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
+chmod 755 /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
+
+cat << 'EOF' > /etc/systemd/system/wirenet-watcher.service
+[Unit]
+Description=WireNet Dynamic Docker Port Watcher Daemon
+After=docker.service wg-quick@wg0.service rinetd.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /opt/wirenet/scripts/wirenet-watcher.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload 2>/dev/null || true
+systemctl enable --now wirenet-watcher.service 2>/dev/null || true
+echo "  [✓] WireNet Dynamic Port Watcher Daemon is ACTIVE!"
+
 echo "[5/5] Scanning Active Game Server Ports..."
 FOUND_PORTS=$(ss -tulpn 2>/dev/null | grep -E "25565|dockerd|java" | awk '{print $5}' | awk -F: '{print $NF}' | sort -u || true)
 if [[ -n "$FOUND_PORTS" ]]; then

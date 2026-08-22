@@ -195,8 +195,34 @@ systemctl restart wg-quick@wg0
 systemctl enable --now rinetd 2>/dev/null || true
 systemctl restart rinetd 2>/dev/null || true
 
+# 11. Install and Start WireNet Dynamic Port Watcher Daemon
+echo "[+] Installing WireNet Dynamic Port Watcher Daemon..."
+mkdir -p /opt/wirenet/scripts
+curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
+chmod 755 /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
+
+cat << 'EOF' > /etc/systemd/system/wirenet-watcher.service
+[Unit]
+Description=WireNet Dynamic Docker Port Watcher Daemon
+After=docker.service wg-quick@wg0.service rinetd.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /opt/wirenet/scripts/wirenet-watcher.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload 2>/dev/null || true
+systemctl enable --now wirenet-watcher.service 2>/dev/null || true
+
 echo "=========================================================="
-echo " [✓] WireNet Node is ACTIVE! (Node IP: $NODE_IP)"
+echo " [✓] WireNet Node is ACTIVE & FULLY AUTOMATED! (Node IP: $NODE_IP)"
+echo " Dynamic Port Watcher is running in background (auto-bridges any new server)!"
 echo "=========================================================="
 echo ""
 echo " FINAL STEP: Run this SINGLE command on your Gateway VPS"
