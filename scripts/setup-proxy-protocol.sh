@@ -23,6 +23,12 @@ if [[ "$ACTION" == "enable" ]]; then
     echo "[+] Installing and configuring HAProxy for PROXY Protocol v2..."
     apt-get update -qq && apt-get install -y haproxy
 
+    # 1. Clear iptables TCP DNAT on Gateway so HAProxy handles the ports directly
+    DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1 || echo "eth0")
+    iptables -t nat -D PREROUTING -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$NODE_IP" 2>/dev/null || true
+    iptables -t nat -D PREROUTING -p tcp -m multiport --dports 25565:25600,30000:40000 -j DNAT --to-destination "$NODE_IP" 2>/dev/null || true
+
+    # 2. Build HAProxy config for Minecraft ports (25565 - 25700)
     cat << EOF > /etc/haproxy/haproxy.cfg
 global
     log /dev/log local0
@@ -39,32 +45,26 @@ defaults
     timeout connect 5s
     timeout client  30m
     timeout server  30m
-
-# Minecraft Standard Port (PROXY Protocol v2 enabled)
-listen minecraft_25565
-    bind 0.0.0.0:25565
-    mode tcp
-    server node1 ${NODE_IP}:25565 send-proxy-v2
-
-# Additional Game Ports
-listen minecraft_25566
-    bind 0.0.0.0:25566
-    mode tcp
-    server node1 ${NODE_IP}:25566 send-proxy-v2
-
-listen minecraft_25567
-    bind 0.0.0.0:25567
-    mode tcp
-    server node1 ${NODE_IP}:25567 send-proxy-v2
 EOF
 
-    # Restart HAProxy
+    for port in $(seq 25565 25700); do
+        cat << EOF >> /etc/haproxy/haproxy.cfg
+
+listen minecraft_${port}
+    bind 0.0.0.0:${port}
+    mode tcp
+    server node1 ${NODE_IP}:${port} send-proxy-v2
+EOF
+    done
+
+    # 3. Allow HAProxy binding and restart
     systemctl enable haproxy 2>/dev/null || true
     systemctl restart haproxy
 
     echo ""
     echo "=========================================================="
     echo " [✓] HAProxy PROXY Protocol v2 is ACTIVE on Gateway!"
+    echo " Ports 25565-25700 are broadcasting PROXY v2 headers."
     echo "=========================================================="
     echo ""
     echo "To display Real Player IPs in Minecraft:"
@@ -73,7 +73,7 @@ EOF
     echo "      proxies:"
     echo "        proxy-protocol: true"
     echo ""
-    echo " 2. Or for any Paper/Spigot server:"
+    echo " 2. Or for any Spigot/Paper/Fabric server:"
     echo "    Drop 'ProxyProtocol.jar' into your server's plugins/ folder:"
     echo "    https://github.com/LOOHP/ProxyProtocol/releases"
     echo ""
@@ -83,8 +83,12 @@ EOF
     echo "=========================================================="
 
 elif [[ "$ACTION" == "disable" ]]; then
-    echo "[+] Disabling HAProxy..."
+    echo "[+] Disabling HAProxy and restoring standard NAT..."
     systemctl stop haproxy 2>/dev/null || true
     systemctl disable haproxy 2>/dev/null || true
+
+    # Restore standard kernel DNAT
+    DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1 || echo "eth0")
+    iptables -t nat -A PREROUTING -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$NODE_IP" 2>/dev/null || true
     echo "[✓] HAProxy disabled. Direct NAT mode restored."
 fi
