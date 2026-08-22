@@ -71,10 +71,14 @@ ip rule add fwmark 0x1 table 100
 ip route flush table 100 2>/dev/null || true
 ip route add default via 10.200.0.1 dev wg0 table 100
 
-# Flush stale nat tables
-iptables -t nat -F PREROUTING 2>/dev/null || true
+# 1. Restore Docker PREROUTING chain if missing
+if command -v docker >/dev/null 2>&1; then
+    if ! iptables -t nat -S PREROUTING 2>/dev/null | grep -q "DOCKER"; then
+        systemctl reload docker 2>/dev/null || true
+    fi
+fi
 
-# Allow loopback, local subnet, and WireGuard tunnel input at top of INPUT chain
+# 2. Allow loopback, local subnet, and WireGuard tunnel input at top of INPUT chain
 iptables -I INPUT 1 -i lo -j ACCEPT 2>/dev/null || true
 iptables -I INPUT 2 -s 127.0.0.0/8 -j ACCEPT 2>/dev/null || true
 iptables -I INPUT 3 -i wg0 -j ACCEPT 2>/dev/null || true
@@ -85,7 +89,20 @@ iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
 iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true
 
-# Block direct public access from external internet on eth0 so backend Node IP is 100% hidden
+# 3. Direct Kernel DNAT from wg0 to Primary IP (where Docker / Wings listens)
+iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
+iptables -t nat -A PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
+
+iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
+iptables -t nat -A PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
+
+# 4. Symmetrical MASQUERADE for tunnel and Docker traffic
+iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
+iptables -t nat -A POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
+iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
+iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
+
+# 5. Block direct public access from external internet on eth0 so backend Node IP is 100% hidden
 DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1 || echo "eth0")
 iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
 iptables -A INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
@@ -93,11 +110,7 @@ iptables -A INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,3
 iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
 iptables -A INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
 
-# Ensure Docker outbound MASQUERADE for Mojang auth & DNS
-iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
-iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
-iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
-# Rebuild rinetd fallback bridge for compatibility
+# 6. Rebuild rinetd dual-layer stream bridge targeting PRIMARY_IP
 if ! command -v rinetd >/dev/null 2>&1; then
     echo "  [+] Installing rinetd..."
     DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null || true
@@ -106,15 +119,15 @@ fi
 
 cat << EOF > /etc/rinetd.conf
 # WireNet Automated Docker Port Bridge
-# Node Virtual IP: $NODE_IP -> Loopback / Host: 127.0.0.1
+# Node Virtual IP: $NODE_IP -> Host Primary IP: $PRIMARY_IP
 EOF
 
 for port in $(seq 25565 25700); do
-    echo "$NODE_IP $port 127.0.0.1 $port" >> /etc/rinetd.conf
+    echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
 done
 
 for port in $(seq 30000 30100); do
-    echo "$NODE_IP $port 127.0.0.1 $port" >> /etc/rinetd.conf
+    echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
 done
 
 systemctl enable --now rinetd 2>/dev/null || true
