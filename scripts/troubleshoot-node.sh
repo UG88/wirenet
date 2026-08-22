@@ -18,26 +18,31 @@ fi
 PRIMARY_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || curl -s -4 --connect-timeout 2 -m 2 ifconfig.me 2>/dev/null || echo "127.0.0.1")
 NODE_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "10.200.0.2")
 
-echo "[1/6] Fixing WireGuard AllowedIPs & Breaking Routing Loops..."
-# Reset AllowedIPs to 10.200.0.0/24 so WireGuard never loops default internet
+echo "[1/6] Enabling Transparent Real IP Ingress (AllowedIPs = 0.0.0.0/0 & Table = off)..."
 if [[ -f /etc/wireguard/wg0.conf ]]; then
-    sed -i 's/AllowedIPs = .*/AllowedIPs = 10.200.0.0\/24/g' /etc/wireguard/wg0.conf 2>/dev/null || true
-fi
-
-GW_KEY=$(wg show wg0 peers 2>/dev/null | head -n1 || true)
-if [[ -n "$GW_KEY" ]]; then
-    wg set wg0 peer "$GW_KEY" allowed-ips 10.200.0.0/24 2>/dev/null || true
+    # Ensure Table = off is present so wg-quick never touches default routing table
+    if ! grep -q "Table = off" /etc/wireguard/wg0.conf; then
+        sed -i '/PrivateKey = /a Table = off' /etc/wireguard/wg0.conf 2>/dev/null || true
+    fi
+    # Set AllowedIPs = 0.0.0.0/0 so WireGuard accepts all real player source IPs
+    sed -i 's/^AllowedIPs = .*/AllowedIPs = 0.0.0.0\/0/g' /etc/wireguard/wg0.conf 2>/dev/null || true
 fi
 
 # Clean any custom routing tables or rules
 ip rule del fwmark 0x1 table 100 2>/dev/null || true
 ip route flush table 100 2>/dev/null || true
 ip route del default dev wg0 2>/dev/null || true
-ip route add 10.200.0.0/24 dev wg0 2>/dev/null || true
 
-# Restart WireGuard
+# Restart WireGuard cleanly
 systemctl restart wg-quick@wg0 || true
-echo "  [✓] WireGuard interface wg0 restarted cleanly."
+
+GW_KEY=$(wg show wg0 peers 2>/dev/null | head -n1 || true)
+if [[ -n "$GW_KEY" ]]; then
+    wg set wg0 peer "$GW_KEY" allowed-ips 0.0.0.0/0 2>/dev/null || true
+fi
+
+ip route add 10.200.0.0/24 dev wg0 2>/dev/null || true
+echo "  [✓] WireGuard interface wg0 configured for Transparent Real IP."
 
 echo "[2/6] Testing Gateway Tunnel Ping (10.200.0.1)..."
 sleep 1
@@ -69,8 +74,10 @@ ip rule add fwmark 0x1 table 100
 ip route flush table 100 2>/dev/null || true
 ip route add default via 10.200.0.1 dev wg0 table 100
 
-# Flush stale nat tables
+# Flush stale nat tables and add transparent localnet forwarding
 iptables -t nat -F PREROUTING 2>/dev/null || true
+iptables -t nat -A PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1 2>/dev/null || true
+iptables -t nat -A PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 127.0.0.1 2>/dev/null || true
 
 # Allow tunnel traffic in firewall
 iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true

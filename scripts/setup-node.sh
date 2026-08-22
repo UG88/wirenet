@@ -147,6 +147,7 @@ cat << EOF > /etc/wireguard/wg0.conf
 [Interface]
 Address = $NODE_IP/24
 PrivateKey = $NODE_PRIVATE_KEY
+Table = off
 
 # Transparent Real IP Return Routing via CONNMARK & Policy Routing
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT
@@ -170,7 +171,7 @@ PostDown = ip route flush table 100 2>/dev/null || true
 [Peer]
 PublicKey = $GW_PUBLIC_KEY
 Endpoint = $GW_ENDPOINT:51820
-AllowedIPs = 10.200.0.0/24
+AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 EOF
 
