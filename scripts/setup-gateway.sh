@@ -24,7 +24,7 @@ if command -v apt-get >/dev/null 2>&1; then
         sed -i '/kali\.download/d' /etc/apt/sources.list 2>/dev/null || true
     fi
     apt-get update -qq || true
-    apt-get install -y -qq wireguard wireguard-tools iptables ufw curl || apt-get install -y wireguard wireguard-tools iptables ufw curl
+    apt-get install -y -qq wireguard wireguard-tools iptables ufw curl rinetd || apt-get install -y wireguard wireguard-tools iptables ufw curl rinetd
 elif command -v dnf >/dev/null 2>&1; then
     dnf install -y wireguard-tools iptables curl >/dev/null 2>&1 || true
 elif command -v yum >/dev/null 2>&1; then

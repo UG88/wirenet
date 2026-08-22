@@ -58,7 +58,9 @@ iptables -t nat -F PREROUTING 2>/dev/null || true
 
 # Rebuild rinetd fallback bridge on Gateway
 if ! command -v rinetd >/dev/null 2>&1; then
-    apt-get update -qq && apt-get install -y rinetd || true
+    echo "  [+] Installing rinetd on Gateway..."
+    DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::ForceIPv4=true -qq 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rinetd 2>/dev/null || true
 fi
 
 cat << EOF > /etc/rinetd.conf
