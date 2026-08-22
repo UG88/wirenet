@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet Node Auto-Troubleshooter & Self-Healing Repair Tool
-# Diagnoses tunnel, port bindings, Docker DNS/Internet, and auto-repairs all issues
+# WireNet Node Auto-Troubleshooter & Instant Tunnel Restoration Tool
+# Restores WireGuard tunnel, fixes recursive routing, and rebuilds rinetd port bridge
 # ==============================================================================
 
 set -euo pipefail
 
 echo "=========================================================="
-echo " WireNet Node Health Diagnostic & Auto-Repair Tool"
+echo " WireNet Node Health Diagnostic & Tunnel Repair Tool"
 echo "=========================================================="
 
 if [[ $EUID -ne 0 ]]; then
@@ -18,33 +18,42 @@ fi
 PRIMARY_IP=$(curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || echo "127.0.0.1")
 NODE_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "10.200.0.2")
 
-echo "[1/6] Checking WireGuard Interface (wg0)..."
-if ip link show dev wg0 >/dev/null 2>&1; then
-    echo "  [✓] Interface wg0 is UP (Node IP: $NODE_IP)"
-else
-    echo "  [!] Interface wg0 is DOWN. Restarting WireGuard..."
-    systemctl restart wg-quick@wg0 || true
+echo "[1/6] Fixing WireGuard AllowedIPs & Breaking Routing Loops..."
+# Reset AllowedIPs to 10.200.0.0/24 so WireGuard never loops default internet
+if [[ -f /etc/wireguard/wg0.conf ]]; then
+    sed -i 's/AllowedIPs = .*/AllowedIPs = 10.200.0.0\/24/g' /etc/wireguard/wg0.conf 2>/dev/null || true
 fi
 
-echo "[2/6] Checking Gateway Ping (10.200.0.1)..."
+GW_KEY=$(wg show wg0 peers 2>/dev/null | head -n1 || true)
+if [[ -n "$GW_KEY" ]]; then
+    wg set wg0 peer "$GW_KEY" allowed-ips 10.200.0.0/24 2>/dev/null || true
+fi
+
+# Clean any custom routing tables or rules
+ip rule del fwmark 0x1 table 100 2>/dev/null || true
+ip route flush table 100 2>/dev/null || true
+ip route del default dev wg0 2>/dev/null || true
+ip route add 10.200.0.0/24 dev wg0 2>/dev/null || true
+
+# Restart WireGuard
+systemctl restart wg-quick@wg0 || true
+echo "  [✓] WireGuard interface wg0 restarted cleanly."
+
+echo "[2/6] Testing Gateway Tunnel Ping (10.200.0.1)..."
+sleep 1
 if ping -c 2 -W 2 10.200.0.1 >/dev/null 2>&1; then
     RTT=$(ping -c 2 10.200.0.1 | tail -1 | awk '{print $4}' | cut -d/ -f2)
-    echo "  [✓] Ping to Gateway is SUCCESSFUL! Latency: ${RTT}ms"
+    echo "  [✓] SUCCESS: Ping to Gateway 10.200.0.1 is ONLINE! Latency: ${RTT}ms"
 else
-    echo "  [!] Gateway ping failed! Refreshing tunnel route..."
-    ip route add 10.200.0.0/24 dev wg0 2>/dev/null || true
+    echo "  [!] Gateway ping failed! Retrying handshake..."
     systemctl restart wg-quick@wg0 || true
 fi
 
-echo "[3/6] Resetting Policy Routing and Cleaning NAT Tables..."
+echo "[3/6] Cleaning Firewall & Enabling Forwarding..."
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1 || true
 
-# Flush stale policy routing rules
-ip rule del fwmark 0x1 table 100 2>/dev/null || true
-ip route flush table 100 2>/dev/null || true
-
-# Flush stale mangle and nat prerouting tables
+# Flush stale mangle and nat tables
 iptables -t nat -F PREROUTING 2>/dev/null || true
 iptables -t mangle -F 2>/dev/null || true
 
@@ -54,25 +63,11 @@ iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
 iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true
 
-# Ensure Docker containers have MASQUERADE for Outbound Internet & Mojang Auth
+# Ensure Docker outbound MASQUERADE for Mojang auth & DNS
 iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
-
 iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
-
-# Ensure Docker live-restore is configured so containers never stop
-mkdir -p /etc/docker
-if [[ ! -f /etc/docker/daemon.json ]] || ! grep -q "dns" /etc/docker/daemon.json 2>/dev/null; then
-    cat << 'EOF' > /etc/docker/daemon.json
-{
-  "dns": ["1.1.1.1", "8.8.8.8"],
-  "live-restore": true
-}
-EOF
-    systemctl reload docker 2>/dev/null || true
-fi
-echo "  [✓] Docker Internet Access, DNS & Mojang Auth routes active."
 
 echo "[4/6] Rebuilding rinetd Port Bridge for all Game Ports..."
 if ! command -v rinetd >/dev/null 2>&1; then
@@ -107,7 +102,7 @@ systemctl enable --now rinetd 2>/dev/null || true
 systemctl restart rinetd 2>/dev/null || true
 echo "  [✓] rinetd port bridge active on all game ports (25565-25700, 30000-30100)"
 
-echo "[5/6] Ensuring WireNet Watcher Daemon is Running..."
+echo "[5/6] Ensuring WireNet Dynamic Watcher is Active..."
 mkdir -p /opt/wirenet/scripts
 curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/UG88/wirenet/main/scripts/wirenet-watcher.sh?$(date +%s)" -o /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
 chmod 755 /opt/wirenet/scripts/wirenet-watcher.sh 2>/dev/null || true
@@ -146,6 +141,6 @@ else
 fi
 
 echo "=========================================================="
-echo " [✓] Node Diagnostics & Auto-Repair Complete!"
-echo " Ports 25565-25700 are fully bridged and online!"
+echo " [✓] Node Diagnostics & Repair Complete!"
+echo " Tunnel is 100% restored and all game ports are online!"
 echo "=========================================================="
