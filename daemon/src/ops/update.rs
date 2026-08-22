@@ -42,16 +42,16 @@ impl UpdateManager {
             }
         }
 
-        println!("[2/4] Compiling optimized release binary...");
+        println!("[2/4] Compiling optimized release binary (takes ~45-60s on 1-CPU servers)...");
         let cargo_bin = dirs_home_cargo_bin();
-        let build = Command::new(&cargo_bin)
+        let status = Command::new(&cargo_bin)
             .args(["build", "--release"])
             .current_dir(format!("{}/daemon", tmp_dir))
-            .output()
+            .status()
             .context("Failed to run cargo build --release")?;
 
-        if !build.status.success() {
-            return Err(anyhow::anyhow!("Cargo build failed: {}", String::from_utf8_lossy(&build.stderr)));
+        if !status.success() {
+            return Err(anyhow::anyhow!("Cargo build failed with exit code {:?}", status.code()));
         }
 
         println!("[3/4] Installing updated binary to /usr/local/bin/wirenet...");
