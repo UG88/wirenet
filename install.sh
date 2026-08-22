@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet Global Installer & CLI Setup
-# Developed by UG88 | https://github.com/UG88/wirenet
-# Installs WireNet globally into /opt/wirenet and registers 'wirenet' command
+# WireNet Unified Rust Engine Installer (by UG88)
+# Installs Rust toolchain, compiles native 'wirenet' CLI, and registers globally
 # ==============================================================================
 
 set -euo pipefail
@@ -20,63 +19,56 @@ fi
 
 echo -e "${CYAN}${BOLD}"
 echo "=========================================================="
-echo "          🚀  Installing WireNet CLI (by UG88)            "
+echo "      🦀  WireNet Pure Rust Engine Global Installer       "
 echo "=========================================================="
 echo -e "${NC}"
 
-INSTALL_DIR="/opt/wirenet"
-BIN_PATH="/usr/local/bin/wirenet"
-REPO_BASE="https://raw.githubusercontent.com/UG88/wirenet/main"
-
-echo "[+] Creating WireNet system directory: ${INSTALL_DIR}..."
-mkdir -p "${INSTALL_DIR}/scripts"
-chmod 755 "${INSTALL_DIR}"
-
-echo "[+] Downloading latest WireNet Master Manager and subsystems..."
-curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/wirenet.sh?$(date +%s)" -o "${INSTALL_DIR}/wirenet.sh"
-chmod 755 "${INSTALL_DIR}/wirenet.sh"
-
-SCRIPTS=(
-    "setup-gateway.sh"
-    "setup-node.sh"
-    "doctor.sh"
-    "status.sh"
-    "firewall.sh"
-    "troubleshoot-gateway.sh"
-    "troubleshoot-node.sh"
-    "wirenet-watcher.sh"
-    "install-daemon.sh"
-    "forward-port.sh"
-    "add-ip-mapping.sh"
-    "uninstall.sh"
-)
-
-for script in "${SCRIPTS[@]}"; do
-    curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/scripts/${script}?$(date +%s)" -o "${INSTALL_DIR}/scripts/${script}" 2>/dev/null || true
-    chmod 755 "${INSTALL_DIR}/scripts/${script}" 2>/dev/null || true
-done
-
-# Save version stamp
-echo "v1.2.0-$(date +%Y%m%d)" > "${INSTALL_DIR}/version"
-
-# Create global command wrapper in /usr/local/bin/wirenet
-echo "[+] Registering global 'wirenet' terminal command..."
-cat << 'EOF' > "${BIN_PATH}"
-#!/usr/bin/env bash
-if [[ $EUID -ne 0 ]]; then
-    exec sudo /opt/wirenet/wirenet.sh "$@"
-else
-    exec /opt/wirenet/wirenet.sh "$@"
+# 1. Install system prerequisites
+echo "[1/4] Installing system build prerequisites..."
+if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq || true
+    apt-get install -y -qq build-essential curl git pkg-config libssl-dev wireguard wireguard-tools iptables || true
 fi
-EOF
-chmod 755 "${BIN_PATH}"
+
+# 2. Check/Install Rust toolchain
+echo "[2/4] Configuring Rust & Cargo toolchain..."
+source "$HOME/.cargo/env" 2>/dev/null || true
+export PATH="$HOME/.cargo/bin:$PATH"
+
+if ! command -v rustup >/dev/null 2>&1; then
+    echo "  [+] Installing Rust toolchain..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    source "$HOME/.cargo/env" 2>/dev/null || true
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
+# 3. Download Source & Compile Release Binary
+echo "[3/4] Downloading latest WireNet source & compiling..."
+BUILD_DIR="/tmp/wirenet_build"
+rm -rf "${BUILD_DIR}"
+mkdir -p "${BUILD_DIR}"
+
+git clone --depth 1 https://github.com/UG88/wirenet.git "${BUILD_DIR}" 2>/dev/null || {
+    curl -fsSL https://github.com/UG88/wirenet/archive/refs/heads/main.tar.gz | tar -xz -C /tmp/
+    mv /tmp/wirenet-main "${BUILD_DIR}"
+}
+
+cd "${BUILD_DIR}/daemon"
+"$HOME/.cargo/bin/cargo" build --release
+
+# 4. Install Global Binary
+echo "[4/4] Installing binary to /usr/local/bin/wirenet..."
+cp -f "${BUILD_DIR}/daemon/target/release/wirenet-daemon" /usr/local/bin/wirenet
+chmod +x /usr/local/bin/wirenet
+rm -rf "${BUILD_DIR}"
 
 echo -e "${GREEN}${BOLD}"
 echo "=========================================================="
-echo " [✓] WireNet installed globally successfully!"
-echo " You can now run 'wirenet' from ANY directory!"
+echo " [✓] WireNet Unified Rust Engine Installed Successfully!"
+echo " You can now run 'wirenet' from any terminal!"
 echo "=========================================================="
 echo -e "${NC}"
 
-# Launch WireNet immediately
-exec "${BIN_PATH}"
+# Display Help / Usage
+/usr/local/bin/wirenet --help

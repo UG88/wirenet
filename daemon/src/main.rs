@@ -1,6 +1,7 @@
 mod config;
 mod gateway;
 mod node;
+mod ops;
 mod protocol;
 mod tui;
 
@@ -9,6 +10,7 @@ use clap::{Parser, Subcommand};
 use config::{GatewayConfig, NodeConfig};
 use gateway::GatewayServer;
 use node::NodeAgent;
+use ops::{DoctorManager, SetupManager, ShieldManager, StatusManager, UninstallManager, UpdateManager};
 use std::sync::Arc;
 use tui::TuiDashboard;
 
@@ -24,6 +26,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Setup WireNet WireGuard Tunnel & Services
+    Setup {
+        #[command(subcommand)]
+        sub: SetupCommands,
+    },
     /// Gateway VPS Commands (Public Ingress & Anti-DDoS Scrubbing)
     Gateway {
         #[command(subcommand)]
@@ -36,10 +43,41 @@ enum Commands {
     },
     /// Launch Interactive Real-Time Terminal Dashboard
     Tui,
-    /// Run System Diagnostic Doctor & Self-Healing Scan
+    /// Run 6-Point System Diagnostic Doctor & Self-Healing Scan
     Doctor,
-    /// Display Current Shield & Connection Status
+    /// Display Current Shield, Tunnel & Connection Status
     Status,
+    /// Configure Anti-DDoS Shielding Mode (standard, strict, off)
+    Shield {
+        #[arg(default_value = "standard")]
+        mode: String,
+    },
+    /// Check for updates from GitHub
+    CheckUpdate,
+    /// 1-Click Self Update to Latest GitHub Version
+    Update,
+    /// 100% Deep Cleaner & Complete Uninstaller
+    Uninstall,
+}
+
+#[derive(Subcommand)]
+enum SetupCommands {
+    /// Install & Configure Gateway VPS (Hub)
+    Gateway {
+        #[arg(long, default_value_t = 25565)]
+        start_port: u16,
+
+        #[arg(long, default_value_t = 25700)]
+        end_port: u16,
+    },
+    /// Install & Configure Pterodactyl Node VPS (Spoke)
+    Node {
+        #[arg(short, long)]
+        gateway: String,
+
+        #[arg(short = 'k', long)]
+        gateway_key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -97,6 +135,14 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Setup { sub } => match sub {
+            SetupCommands::Gateway { start_port, end_port } => {
+                SetupManager::setup_gateway(start_port, end_port)?;
+            }
+            SetupCommands::Node { gateway, gateway_key } => {
+                SetupManager::setup_node(&gateway, &gateway_key)?;
+            }
+        },
         Commands::Gateway { sub } => match sub {
             GatewayCommands::Run {
                 bind,
@@ -143,22 +189,22 @@ async fn main() -> Result<()> {
             TuiDashboard::run()?;
         }
         Commands::Doctor => {
-            println!("==========================================================");
-            println!(" 🩺 WireNet System Doctor (Rust Engine)");
-            println!("==========================================================");
-            println!(" [✓] Rust Async Tokio Runtime: ACTIVE");
-            println!(" [✓] Network Subsystem: OPERATIONAL");
-            println!(" [✓] Zero Memory Leaks / Zero Garbage Collection Pauses");
-            println!("==========================================================");
+            DoctorManager::run_diagnostics()?;
         }
         Commands::Status => {
-            println!("==========================================================");
-            println!(" 🌐 WireNet Status Snapshot");
-            println!("==========================================================");
-            println!(" Status       : OPERATIONAL");
-            println!(" Shield Mode  : STANDARD (Hardware SYN Cookies + Rate Limiter)");
-            println!(" Tunnel Type  : WireGuard + Async Tokio Fastpath");
-            println!("==========================================================");
+            StatusManager::show_status()?;
+        }
+        Commands::Shield { mode } => {
+            ShieldManager::set_mode(&mode)?;
+        }
+        Commands::CheckUpdate => {
+            UpdateManager::check_update()?;
+        }
+        Commands::Update => {
+            UpdateManager::self_update()?;
+        }
+        Commands::Uninstall => {
+            UninstallManager::deep_uninstall()?;
         }
     }
 
