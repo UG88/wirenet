@@ -28,12 +28,14 @@ function enable_shield() {
     iptables -N MC_TCP_FILTER 2>/dev/null || iptables -F MC_TCP_FILTER
     iptables -N MC_UDP_FILTER 2>/dev/null || iptables -F MC_UDP_FILTER
 
+    # 1. Drop Malformed & Invalid TCP Packets
     iptables -A MC_TCP_FILTER -m state --state INVALID -j DROP
     iptables -A MC_TCP_FILTER -p tcp --tcp-flags ALL NONE -j DROP
     iptables -A MC_TCP_FILTER -p tcp --tcp-flags ALL ALL -j DROP
     iptables -A MC_TCP_FILTER -p tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
     iptables -A MC_TCP_FILTER -p tcp --tcp-flags SYN,RST SYN,RST -j DROP
 
+    # 2. Rate Limiting for TCP SYN & UDP Floods
     if [[ "$mode" == "strict" ]]; then
         iptables -A MC_TCP_FILTER -p tcp --syn -m hashlimit --hashlimit-above 10/sec --hashlimit-burst 20 --hashlimit-mode srcip --hashlimit-name mc_tcp_limit -j DROP
         iptables -A MC_UDP_FILTER -p udp -m hashlimit --hashlimit-above 40/sec --hashlimit-burst 80 --hashlimit-mode srcip --hashlimit-name mc_udp_limit -j DROP
@@ -41,14 +43,24 @@ function enable_shield() {
         iptables -A MC_TCP_FILTER -p tcp --syn -m hashlimit --hashlimit-above 25/sec --hashlimit-burst 50 --hashlimit-mode srcip --hashlimit-name mc_tcp_limit -j DROP
         iptables -A MC_UDP_FILTER -p udp -m hashlimit --hashlimit-above 60/sec --hashlimit-burst 120 --hashlimit-mode srcip --hashlimit-name mc_udp_limit -j DROP
     fi
+    
+    # 3. Accept Legitimate Traffic
     iptables -A MC_TCP_FILTER -j ACCEPT
     iptables -A MC_UDP_FILTER -j ACCEPT
 
-    iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25600,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
-    iptables -A INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25600,30000:40000 -j MC_TCP_FILTER
+    # 4. Attach to FORWARD and PREROUTING chains (so routed/DNAT traffic is filtered!)
+    iptables -D FORWARD -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
+    iptables -I FORWARD 1 -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER
 
-    iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25600,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
-    iptables -A INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25600,30000:40000 -j MC_UDP_FILTER
+    iptables -D FORWARD -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
+    iptables -I FORWARD 1 -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER
+
+    # Also attach to INPUT for local protection
+    iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
+    iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER
+
+    iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
+    iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER
 
     echo "[✓] WireNet Firewall Shield is now ENABLED ($mode mode). Existing players remain connected!"
 }
@@ -56,8 +68,10 @@ function enable_shield() {
 function disable_shield() {
     check_root
     echo "[+] Disabling WireNet Firewall Shield..."
-    iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25600,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
-    iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25600,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
+    iptables -D FORWARD -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
+    iptables -D FORWARD -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
+    iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
+    iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
     iptables -F MC_TCP_FILTER 2>/dev/null || true
     iptables -F MC_UDP_FILTER 2>/dev/null || true
     echo "[✓] WireNet Firewall Shield is now DISABLED. All traffic passes directly."
@@ -67,12 +81,13 @@ function show_status() {
     echo "=========================================================="
     echo " WireNet Minecraft Firewall & Anti-DDoS Status"
     echo "=========================================================="
-    if iptables -L INPUT -n 2>/dev/null | grep -q "MC_TCP_FILTER"; then
+    if iptables -L FORWARD -n 2>/dev/null | grep -q "MC_TCP_FILTER" || iptables -L INPUT -n 2>/dev/null | grep -q "MC_TCP_FILTER"; then
         echo " Shield Status: [ ACTIVE / PROTECTED ]"
         echo ""
-        echo " Live Filter Statistics (Dropped Packets & Traffic):"
+        echo "--- TCP Filter Statistics (SYN Cookies, Malformed Drops, Rate Limits) ---"
         iptables -L MC_TCP_FILTER -n -v --line-numbers 2>/dev/null
         echo ""
+        echo "--- UDP Filter Statistics (Bedrock Reflection & Flood Drops) ---"
         iptables -L MC_UDP_FILTER -n -v --line-numbers 2>/dev/null
     else
         echo " Shield Status: [ DISABLED / PASS-THROUGH ]"
@@ -88,7 +103,7 @@ function show_live_status() {
         echo " 🛡️  WireNet Live Real-Time Anti-DDoS Attack & Packet Monitor (Refreshing 1s)   "
         echo "                   [ Press 'q' or Ctrl+C to return to menu ]                    "
         echo "================================================================================"
-        if iptables -L INPUT -n 2>/dev/null | grep -q "MC_TCP_FILTER"; then
+        if iptables -L FORWARD -n 2>/dev/null | grep -q "MC_TCP_FILTER" || iptables -L INPUT -n 2>/dev/null | grep -q "MC_TCP_FILTER"; then
             echo " Shield Status: [ ACTIVE / PROTECTED ]"
             echo ""
             echo "--- TCP Filter Statistics (SYN Cookies, Malformed Drops, Rate Limits) ---"
@@ -98,6 +113,7 @@ function show_live_status() {
             iptables -L MC_UDP_FILTER -n -v --line-numbers 2>/dev/null || true
         else
             echo " Shield Status: [ DISABLED / PASS-THROUGH ]"
+            echo " (Select option 2 or 3 to enable protection)"
         fi
         echo "================================================================================"
 

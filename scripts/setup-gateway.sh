@@ -101,11 +101,19 @@ iptables -A MC_TCP_FILTER -j ACCEPT
 iptables -A MC_UDP_FILTER -p udp -m hashlimit --hashlimit-above 60/sec --hashlimit-burst 120 --hashlimit-mode srcip --hashlimit-name mc_udp_limit -j DROP
 iptables -A MC_UDP_FILTER -j ACCEPT
 
-iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25600,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
-iptables -A INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25600,30000:40000 -j MC_TCP_FILTER
+# Attach to FORWARD chain (for routed game traffic)
+iptables -D FORWARD -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
+iptables -I FORWARD 1 -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER
 
-iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25600,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
-iptables -A INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25600,30000:40000 -j MC_UDP_FILTER
+iptables -D FORWARD -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
+iptables -I FORWARD 1 -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER
+
+# Attach to INPUT chain (for local host protection)
+iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER 2>/dev/null || true
+iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j MC_TCP_FILTER
+
+iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER 2>/dev/null || true
+iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j MC_UDP_FILTER
 
 # 7. Start & Enable WireGuard Service
 systemctl enable --now wg-quick@wg0
