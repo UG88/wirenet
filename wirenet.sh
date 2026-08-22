@@ -25,13 +25,90 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-REPO_BASE="https://raw.githubusercontent.com/UG88/wirenet/main/scripts"
+REPO_BASE="https://raw.githubusercontent.com/UG88/wirenet/main"
+INSTALL_DIR="/opt/wirenet"
+BIN_PATH="/usr/local/bin/wirenet"
+CURRENT_VERSION="v1.2.0"
 
-# Helper to fetch fresh scripts bypassing GitHub CDN cache
+# Auto-install to /usr/local/bin if running from curl
+if [[ ! -f "$BIN_PATH" || ! -d "$INSTALL_DIR" ]]; then
+    mkdir -p "${INSTALL_DIR}/scripts"
+    cp -f "$0" "${INSTALL_DIR}/wirenet.sh" 2>/dev/null || curl -fsSL "${REPO_BASE}/wirenet.sh?$(date +%s)" -o "${INSTALL_DIR}/wirenet.sh" 2>/dev/null || true
+    chmod 755 "${INSTALL_DIR}/wirenet.sh" 2>/dev/null || true
+    
+    cat << 'EOF' > "${BIN_PATH}" 2>/dev/null || true
+#!/usr/bin/env bash
+if [[ $EUID -ne 0 ]]; then
+    exec sudo /opt/wirenet/wirenet.sh "$@"
+else
+    exec /opt/wirenet/wirenet.sh "$@"
+fi
+EOF
+    chmod 755 "${BIN_PATH}" 2>/dev/null || true
+fi
+
+# Helper to fetch and run scripts (local first, GitHub fallback)
 fetch_script() {
     local script_name="$1"
     shift
-    curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/${script_name}?$(date +%s)" | sudo bash -s -- "$@"
+    if [[ -f "${INSTALL_DIR}/scripts/${script_name}" ]]; then
+        sudo bash "${INSTALL_DIR}/scripts/${script_name}" "$@"
+    else
+        curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/scripts/${script_name}?$(date +%s)" | sudo bash -s -- "$@"
+    fi
+}
+
+# Auto-Update System
+update_wirenet() {
+    draw_header
+    echo -e "${YELLOW}${BOLD}  🔄  CHECKING FOR WIRENET UPDATES...${NC}\n"
+    echo -e "Current Local Version: ${BOLD}${CURRENT_VERSION}${NC}"
+    echo -e "Connecting to GitHub repository: ${CYAN}UG88/wirenet${NC}..."
+
+    mkdir -p "${INSTALL_DIR}/scripts"
+
+    SCRIPTS=(
+        "setup-gateway.sh"
+        "setup-node.sh"
+        "doctor.sh"
+        "status.sh"
+        "troubleshoot.sh"
+        "troubleshoot-gateway.sh"
+        "troubleshoot-node.sh"
+        "forward-port.sh"
+        "add-ip-mapping.sh"
+        "firewall.sh"
+        "fix-gateway.sh"
+        "fix-node.sh"
+        "fix-node-routing.sh"
+        "uninstall.sh"
+    )
+
+    echo "[+] Downloading latest WireNet Master Manager..."
+    curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/wirenet.sh?$(date +%s)" -o "${INSTALL_DIR}/wirenet.sh"
+    chmod 755 "${INSTALL_DIR}/wirenet.sh"
+
+    for script in "${SCRIPTS[@]}"; do
+        echo "  [+] Updating scripts/${script}..."
+        curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/scripts/${script}?$(date +%s)" -o "${INSTALL_DIR}/scripts/${script}" 2>/dev/null || true
+        chmod 755 "${INSTALL_DIR}/scripts/${script}" 2>/dev/null || true
+    done
+
+    # Update global command wrapper
+    cat << 'EOF' > "${BIN_PATH}"
+#!/usr/bin/env bash
+if [[ $EUID -ne 0 ]]; then
+    exec sudo /opt/wirenet/wirenet.sh "$@"
+else
+    exec /opt/wirenet/wirenet.sh "$@"
+fi
+EOF
+    chmod 755 "${BIN_PATH}"
+
+    echo -e "\n${GREEN}${BOLD}[✓] WireNet successfully updated to the latest release!${NC}"
+    echo -e "All scripts in ${INSTALL_DIR} have been synchronized.\n"
+    read -r -p "Press ENTER to reload WireNet..." </dev/tty || true
+    exec "${BIN_PATH}"
 }
 
 # Header with fixed ASCII Art and UG88 Author branding
@@ -546,6 +623,7 @@ MAIN_OPTIONS=(
     "Minecraft Anti-DDoS Shield Manager (Submenu)"
     "Custom Port & Multi-IP Routing Manager (Submenu)"
     "Advanced Troubleshooting & Auto-Repair (Submenu)"
+    "Check for Updates & Upgrade WireNet (Latest Version)"
     "Uninstall WireNet Completely"
     "Exit WireNet Manager"
 )
@@ -555,6 +633,7 @@ CURRENT_INDEX=0
 
 while true; do
     draw_header
+    echo -e "  Version: ${BOLD}${GREEN}${CURRENT_VERSION}${NC} | Root Command: ${CYAN}${BOLD}wirenet${NC}"
     echo -e "  Use ${BOLD}UP/DOWN Arrow Keys${NC} to select, press ${BOLD}ENTER${NC} (or press number ${BOLD}1-9${NC}):\n"
 
     for i in "${!MAIN_OPTIONS[@]}"; do
@@ -617,7 +696,8 @@ while true; do
                 4) firewall_menu ;;
                 5) routing_menu ;;
                 6) troubleshoot_menu ;;
-                7) # Uninstall
+                7) update_wirenet ;;
+                8) # Uninstall
                     draw_header
                     show_guide "Complete Uninstallation Guide" \
                                "Completely stops and wipes WireNet services, WireGuard keys, and port forwarding rules." \
@@ -628,7 +708,7 @@ while true; do
                     fi
                     read -r -p "Press ENTER to continue..." </dev/tty || true
                     ;;
-                8) # Exit
+                9) # Exit
                     echo -e "\n${GREEN}Thank you for using WireNet by UG88! Exiting.${NC}\n"
                     exit 0
                     ;;
@@ -661,7 +741,8 @@ while true; do
         5) firewall_menu ;;
         6) routing_menu ;;
         7) troubleshoot_menu ;;
-        8)
+        8) update_wirenet ;;
+        9)
             draw_header
             show_guide "Complete Uninstallation Guide" \
                        "Completely stops and wipes WireNet services, WireGuard keys, and port forwarding rules." \

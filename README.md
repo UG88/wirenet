@@ -16,36 +16,42 @@ It replaces userspace reverse proxies (like FRP) with native Linux kernel transp
 
 ---
 
-## 🎮 1-Command All-In-One Control Center
+## 🎮 1-Command Global Setup & Control Center
 
-Launch the interactive **TUI Master Menu** on **any VPS** with full arrow-key navigation (Hyper-V / Proxmox style):
+Install WireNet globally and launch the interactive **TUI Master Control Center** on **any VPS** (with arrow-key navigation):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/wirenet.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/install.sh | sudo bash
+```
+
+Once installed, simply type **`wirenet`** from **ANY directory** at any time:
+```bash
+wirenet
 ```
 
 ```
 ================================================================================
-       __      ___          _   _      _     __  __                             
-       \ \    / (_)        | \ | |    | |   |  \/  |                            
-        \ \  / / _ _ __ ___|  \| | ___| |_  | \  / | __ _ _ __   __ _  __ _ ___ 
-         \ \/ / | | '__/ _ \ . ` |/ _ \ __| | |\/| |/ _` | '_ \ / _` |/ _` / __|
-          \  /  | | | |  __/ |\  |  __/ |_  | |  | | (_| | | | | (_| | (_| \__ \
-           \/   |_|_|  \___|_| \_|\___|\__| |_|  |_|\__,_|_| |_|\__,_|\__, |___/
-                                                                        __/ |   
-                                                                       |___/    
-               Kernel-Level Ingress & Anti-DDoS Shield for Pterodactyl          
+  __          ___          _   _      _   
+  \ \        / (_)        | \ | |    | |  
+   \ \  /\  / / _ _ __ ___|  \| | ___| |_ 
+    \ \/  \/ / | | '__/ _ \ . ` |/ _ \ __|
+     \  /\  /  | | | |  __/ |\  |  __/ |_ 
+      \/  \/   |_|_|  \___|_| \_|\___|\__|
+
+     Kernel-Level Minecraft Ingress & Anti-DDoS Shield for Pterodactyl
+                Developed by UG88 | GitHub: UG88/wirenet
 ================================================================================
+  Version: v1.2.0 | Root Command: wirenet
   Use UP/DOWN Arrow Keys to select, press ENTER (or press number 1-9):
 
   ▶ [ 1 ] Install / Setup Gateway VPS (Hub) 
     [ 2 ] Install / Setup Pterodactyl Node VPS (Spoke)
-    [ 3 ] Live Status & Telemetry Dashboard
-    [ 4 ] Run WireNet Doctor (Full Diagnostic & Auto-Fix)
-    [ 5 ] Minecraft Anti-DDoS Shield Manager
-    [ 6 ] Custom Port Forwarder (e.g. 25567 -> 25565)
-    [ 7 ] Dedicated Multi-IP Mapping Tool
-    [ 8 ] Advanced Troubleshooting & Auto-Repair Menu
+    [ 3 ] Live Status & Telemetry Dashboard (Submenu)
+    [ 4 ] WireNet Doctor & System Inspector (Submenu)
+    [ 5 ] Minecraft Anti-DDoS Shield Manager (Submenu)
+    [ 6 ] Custom Port & Multi-IP Routing Manager (Submenu)
+    [ 7 ] Advanced Troubleshooting & Auto-Repair (Submenu)
+    [ 8 ] Check for Updates & Upgrade WireNet (Latest Version)
     [ 9 ] Uninstall WireNet Completely
     [ 10] Exit WireNet Manager
 ```
