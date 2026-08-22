@@ -75,6 +75,7 @@ for port in $(seq 30000 30100); do
     echo "0.0.0.0 $port 10.200.0.2 $port" >> /etc/rinetd.conf
 done
 
+systemctl stop wirenet-gateway.service 2>/dev/null || true
 systemctl enable --now rinetd 2>/dev/null || true
 systemctl restart rinetd 2>/dev/null || true
 
@@ -95,7 +96,11 @@ if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
 fi
 echo "  [✓] Forwarding and firewall rules refreshed (Ingress Port Bridge Active)."
 
-echo "[5/5] Testing End-to-End Minecraft Port (10.200.0.2:25565)..."
+echo "[5/5] Testing End-to-End Minecraft Port..."
+if nc -z -w 2 127.0.0.1 25565 2>/dev/null; then
+    echo "  [✓] SUCCESS: Gateway Public Ingress is LISTENING on port 25565!"
+fi
+
 if nc -z -w 2 10.200.0.2 25565 2>/dev/null; then
     echo "  [✓] SUCCESS: Gateway reached Minecraft server on Node port 25565!"
 elif nc -z -w 2 10.200.0.2 25566 2>/dev/null; then
