@@ -86,10 +86,17 @@ impl NodeAgent {
 
                     // Scan and sync ports
                     if let Ok(ports) = self.docker_watcher.scan_active_ports().await {
+                        for p in &ports {
+                            let _ = super::LocalForwarder::spawn_port_bridge(p.port, "127.0.0.1").await;
+                        }
                         framed.send(Message::PortSync {
                             node_id: self.config.node_id.clone(),
                             ports,
                         }).await?;
+                    } else {
+                        for &p in &self.config.static_ports {
+                            let _ = super::LocalForwarder::spawn_port_bridge(p, "127.0.0.1").await;
+                        }
                     }
                 }
                 msg = framed.next() => {
