@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet Doctor — Complete End-to-End Diagnostic & Health Inspector
-# Validates WireGuard tunnels, Docker bindings, port bridges, and firewall rules
+# WireNet Doctor & 6-Point System Diagnostic Inspector
+# Developed by UG88 | https://github.com/UG88/wirenet
+# Performs deep kernel, tunnel, Docker, and routing checks with 1-click auto-repair
 # ==============================================================================
 
 set -euo pipefail
@@ -19,42 +20,41 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# Detect Role
+if [[ -f /etc/wireguard/gateway_private.key ]] || ip addr show dev wg0 2>/dev/null | grep -q "10.200.0.1/"; then
+    IS_GATEWAY=true
+    ROLE="GATEWAY VPS (Hub)"
+else
+    IS_GATEWAY=false
+    ROLE="PTERODACTYL NODE VPS (Spoke)"
+fi
+
+PUBLIC_IP=$(curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || echo "UNKNOWN")
+WG_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "NOT CONFIGURED")
+
 echo -e "${CYAN}${BOLD}"
 echo "=========================================================="
 echo "          🩺  WireNet System Doctor & Inspector           "
 echo "=========================================================="
 echo -e "${NC}"
-
-# Detect Role
-IS_GATEWAY=false
-if [[ -f /etc/wireguard/gateway_private.key ]] || ip addr show dev wg0 2>/dev/null | grep -q "10.200.0.1/"; then
-    IS_GATEWAY=true
-    ROLE_NAME="GATEWAY VPS (Hub)"
-else
-    ROLE_NAME="PTERODACTYL NODE VPS (Spoke)"
-fi
-
-PUBLIC_IP=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || echo "UNKNOWN")
-WG_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "NOT CONFIGURED")
-
-echo -e "Server Role      : ${BOLD}${ROLE_NAME}${NC}"
+echo -e "Server Role      : ${BOLD}${ROLE}${NC}"
 echo -e "Public IPv4      : ${BOLD}${PUBLIC_IP}${NC}"
-echo -e "WireGuard IP     : ${BOLD}${WG_IP}${NC}"
+echo -e "WireGuard IP     : ${BOLD}${GREEN}${WG_IP}${NC}"
 echo -e "----------------------------------------------------------"
 
 ISSUES_FOUND=0
 
-# [Check 1] Kernel Packet Forwarding
+# [Check 1] Kernel IP Forwarding
 echo -n "Checking Kernel IP Forwarding... "
 IP_FWD=$(sysctl -n net.ipv4.ip_forward 2>/dev/null || echo "0")
 if [[ "$IP_FWD" == "1" ]]; then
     echo -e "${GREEN}[PASS]${NC} (net.ipv4.ip_forward = 1)"
 else
-    echo -e "${RED}[FAIL]${NC} (Disabled)"
+    echo -e "${RED}[FAIL]${NC} (net.ipv4.ip_forward = 0)"
     ISSUES_FOUND=$((ISSUES_FOUND + 1))
 fi
 
-# [Check 2] WireGuard Interface (wg0)
+# [Check 2] WireGuard Interface
 echo -n "Checking WireGuard Service (wg0)... "
 if ip link show dev wg0 >/dev/null 2>&1; then
     echo -e "${GREEN}[PASS]${NC} (Interface wg0 is UP)"
@@ -112,11 +112,20 @@ if [[ "$IS_GATEWAY" == false ]]; then
         ISSUES_FOUND=$((ISSUES_FOUND + 1))
     fi
 
-    echo -n "Checking Local Minecraft Port 25565... "
-    if ss -tulpn 2>/dev/null | grep -q "25565"; then
-        echo -e "${GREEN}[PASS]${NC} (Port 25565 listening)"
+    echo -n "Scanning Active Game Server Ports... "
+    FOUND_PORTS=$(ss -tulpn 2>/dev/null | grep -E "dockerd|java|wings" | awk '{print $5}' | awk -F: '{print $NF}' | sort -u || true)
+    if [[ -n "$FOUND_PORTS" ]]; then
+        echo -e "${GREEN}[PASS]${NC} (Listening on port(s): ${FOUND_PORTS})"
+        for p in $FOUND_PORTS; do
+            if nc -z -w 1 "$WG_IP" "$p" 2>/dev/null; then
+                echo -e "  ├── Port $p: ${GREEN}[PASS]${NC} (Bridged & answering on ${WG_IP}:${p})"
+            else
+                echo -e "  ├── Port $p: ${YELLOW}[WARN]${NC} (Port ${p} not in rinetd.conf - Auto-Repair can fix this)"
+                ISSUES_FOUND=$((ISSUES_FOUND + 1))
+            fi
+        done
     else
-        echo -e "${YELLOW}[WARN]${NC} (No server currently listening on port 25565)"
+        echo -e "${YELLOW}[WARN]${NC} (No game server processes detected yet)"
     fi
 fi
 
@@ -140,7 +149,7 @@ if [[ "$IS_GATEWAY" == true ]]; then
 
     echo -n "Checking Minecraft Anti-DDoS Shield... "
     if iptables -L INPUT -n 2>/dev/null | grep -q "MC_TCP_FILTER"; then
-        echo -e "${GREEN}[PASS]${NC} (Hardware SYN Flood Protection ENABLED)"
+        echo -e "${GREEN}[PASS]${NC} (Anti-DDoS Shield is ACTIVE)"
     else
         echo -e "${YELLOW}[WARN]${NC} (Anti-DDoS chains not attached)"
     fi
@@ -149,16 +158,13 @@ fi
 echo -e "----------------------------------------------------------"
 
 if [[ $ISSUES_FOUND -eq 0 ]]; then
-    echo -e "${GREEN}${BOLD}[✓] ALL SYSTEMS HEALTHY! WireNet is 100% operational.${NC}"
-    echo ""
+    echo -e "${GREEN}${BOLD}[✓] ALL SYSTEMS HEALTHY! WireNet is 100% operational.${NC}\n"
 else
-    echo -e "${RED}${BOLD}[!] Found ${ISSUES_FOUND} issue(s) needing attention.${NC}"
-    echo ""
-    echo -e "${CYAN}Running 1-click automated repair in 3 seconds...${NC}"
-    sleep 2
+    echo -e "${RED}${BOLD}[!] Detected ${ISSUES_FOUND} issue(s).${NC}\n"
+    echo -e "${YELLOW}Starting automatic self-healing repair...${NC}"
     if [[ "$IS_GATEWAY" == true ]]; then
-        curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot-gateway.sh | sudo bash
+        curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/troubleshoot-gateway.sh?$(date +%s) | sudo bash
     else
-        curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot-node.sh | sudo bash
+        curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/troubleshoot-node.sh?$(date +%s) | sudo bash
     fi
 fi
