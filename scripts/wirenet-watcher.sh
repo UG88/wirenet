@@ -27,13 +27,17 @@ sync_container_routes() {
 
         for c_port in $ports; do
             if [[ "$c_port" =~ ^[0-9]+$ && "$c_port" -ge 1024 && "$c_port" -le 65535 ]]; then
-                # Direct TCP Kernel DNAT to container IP (Bypasses docker-proxy & preserves Real Player IP!)
-                iptables -t nat -D PREROUTING -i wg0 -p tcp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
-                iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}"
+                # Direct TCP Kernel DNAT to container IP (Preserves Real Player IP directly to Minecraft!)
+                iptables -t nat -D PREROUTING -p tcp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
+                iptables -t nat -I PREROUTING 1 -p tcp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}"
 
                 # Direct UDP Kernel DNAT
-                iptables -t nat -D PREROUTING -i wg0 -p udp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
-                iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}"
+                iptables -t nat -D PREROUTING -p udp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}" 2>/dev/null || true
+                iptables -t nat -I PREROUTING 1 -p udp --dport "$c_port" -j DNAT --to-destination "${c_ip}:${c_port}"
+
+                # Allow in FORWARD chain
+                iptables -I FORWARD 1 -d "${c_ip}" -p tcp --dport "$c_port" -j ACCEPT 2>/dev/null || true
+                iptables -I FORWARD 1 -d "${c_ip}" -p udp --dport "$c_port" -j ACCEPT 2>/dev/null || true
             fi
         done
     done

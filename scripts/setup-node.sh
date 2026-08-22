@@ -142,21 +142,30 @@ fi
 NODE_PRIVATE_KEY=$(cat /etc/wireguard/node_private.key)
 NODE_PUBLIC_KEY=$(cat /etc/wireguard/node_public.key)
 
-# 7. Create WireGuard Configuration
+# 7. Create WireGuard Configuration with Transparent Real IP Policy Routing
 cat << EOF > /etc/wireguard/wg0.conf
 [Interface]
 Address = $NODE_IP/24
 PrivateKey = $NODE_PRIVATE_KEY
 
+# Transparent Real IP Return Routing via CONNMARK & Policy Routing
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT
 PostUp = iptables -I INPUT 1 -i %i -j ACCEPT 2>/dev/null || true
 PostUp = ip route add 10.200.0.0/24 dev %i 2>/dev/null || true
-PostUp = iptables -t nat -A PREROUTING -i %i -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination $PRIMARY_IP 2>/dev/null || true
+PostUp = iptables -t mangle -A PREROUTING -i %i -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1
+PostUp = iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark
+PostUp = iptables -t mangle -A OUTPUT -j CONNMARK --restore-mark
+PostUp = ip rule add fwmark 0x1 table 100 2>/dev/null || true
+PostUp = ip route add default via 10.200.0.1 dev %i table 100 2>/dev/null || true
 
 PostDown = iptables -D FORWARD -i %i -j ACCEPT 2>/dev/null || true
 PostDown = iptables -D FORWARD -o %i -j ACCEPT 2>/dev/null || true
 PostDown = iptables -D INPUT -i %i -j ACCEPT 2>/dev/null || true
-PostDown = iptables -t nat -D PREROUTING -i %i -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination $PRIMARY_IP 2>/dev/null || true
+PostDown = iptables -t mangle -D PREROUTING -i %i -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null || true
+PostDown = iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark 2>/dev/null || true
+PostDown = iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark 2>/dev/null || true
+PostDown = ip rule del fwmark 0x1 table 100 2>/dev/null || true
+PostDown = ip route flush table 100 2>/dev/null || true
 
 [Peer]
 PublicKey = $GW_PUBLIC_KEY

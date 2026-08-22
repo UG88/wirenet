@@ -47,9 +47,10 @@ iptables -I FORWARD 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/de
 iptables -I FORWARD 1 -i "$DEFAULT_IFACE" -o wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -i wg0 -o "$DEFAULT_IFACE" -j ACCEPT 2>/dev/null || true
 
-# Apply MASQUERADE on wg0 for reliable return path
+# Pure transparent DNAT without SNAT on wg0 -> preserves genuine client IP
 iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
-iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
+iptables -t nat -D POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null || true
+iptables -t nat -A POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE
 
 # Forward all game ports (25565-25700 and 30000-40000) to Node 1
 iptables -t nat -D PREROUTING -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
