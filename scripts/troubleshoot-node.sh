@@ -147,9 +147,23 @@ if [[ -n "$FOUND_PORTS" ]]; then
     done
 else
     echo "  [i] No server currently running. Start your server in Pterodactyl when ready."
-fi
+NODE_PUB=$(cat /etc/wireguard/node_public.key 2>/dev/null || wg show wg0 public-key 2>/dev/null || echo "")
 
-echo "=========================================================="
-echo " [✓] Node Diagnostics & Repair Complete!"
-echo " Tunnel is 100% restored and all game ports are online!"
-echo "=========================================================="
+if ! ping -c 2 -W 2 10.200.0.1 >/dev/null 2>&1; then
+    echo ""
+    echo "=========================================================="
+    echo " ⚠️  GATEWAY LINK PENDING: Key Authorization Needed!"
+    echo "=========================================================="
+    echo " The Gateway does not have this Node's public key yet."
+    echo " Copy & run this EXACT command on your Gateway VPS (AWS):"
+    echo ""
+    echo "   wg set wg0 peer $NODE_PUB allowed-ips 10.200.0.2/32"
+    echo ""
+    echo "=========================================================="
+else
+    echo "=========================================================="
+    echo " [✓] Node Diagnostics & Repair Complete!"
+    echo " Encrypted Tunnel to Gateway is 100% ONLINE (10.200.0.1 ↔ 10.200.0.2)"
+    echo " All game ports are automatically bridged to Docker!"
+    echo "=========================================================="
+fi
