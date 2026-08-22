@@ -58,14 +58,20 @@ iptables -t nat -A PREROUTING -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 2
 iptables -t nat -D PREROUTING -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
 iptables -t nat -A PREROUTING -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2
 
+# Allow control plane port 9000 and WireGuard interface input
+iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
+iptables -I INPUT 1 -p tcp --dport 9000 -j ACCEPT 2>/dev/null || true
+
 # Open in UFW if UFW is active
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+    ufw allow 9000/tcp >/dev/null 2>&1 || true
+    ufw allow 51820/udp >/dev/null 2>&1 || true
     ufw allow 25565:25700/tcp >/dev/null 2>&1 || true
     ufw allow 25565:25700/udp >/dev/null 2>&1 || true
     ufw allow 30000:40000/tcp >/dev/null 2>&1 || true
     ufw allow 30000:40000/udp >/dev/null 2>&1 || true
 fi
-echo "  [✓] Forwarding and firewall rules refreshed."
+echo "  [✓] Forwarding and firewall rules refreshed (Control Port 9000 Allowed)."
 
 echo "[5/5] Testing End-to-End Minecraft Port (10.200.0.2:25565)..."
 if nc -z -w 2 10.200.0.2 25565 2>/dev/null; then
