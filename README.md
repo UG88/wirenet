@@ -91,27 +91,27 @@ curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/wirenet.sh | sudo
 
 ### Setup Gateway VPS
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-gateway.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/setup-gateway.sh | sudo bash
 ```
 
 ### Setup Pterodactyl Node VPS (With Interactive Node Menu)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/setup-node.sh | sudo bash
 ```
 
 ### Run WireNet Doctor (6-Point Health Inspector)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/doctor.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/doctor.sh | sudo bash
 ```
 
 ### View Live Telemetry Dashboard
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/status.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/status.sh | sudo bash
 ```
 
 ### Universal 1-Click Auto-Troubleshooter
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/troubleshoot.sh | sudo bash
 ```
 
 ---
@@ -121,7 +121,7 @@ curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot.sh |
 ### When Creating a New Node (Node 2, Node 3...):
 Run `setup-node.sh` on the new node and select the node number from the interactive menu:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/setup-node.sh | sudo bash
 ```
 
 Then authorize on Gateway VPS:
@@ -141,16 +141,16 @@ Manage the kernel packet filtering shield on your Gateway VPS with **zero player
 
 ```bash
 # View live attack statistics and dropped packet counters
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firewall.sh) status
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/firewall.sh) status
 
 # Turn on standard hosting protection
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firewall.sh) enable
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/firewall.sh) enable
 
 # Turn on STRICT anti-bot mode (during heavy bot raids)
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firewall.sh) strict
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/firewall.sh) strict
 
 # Temporarily disable shield
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firewall.sh) disable
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/firewall.sh) disable
 ```
 
 ---
@@ -160,15 +160,16 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/firew
 | Script | Server Location | Purpose |
 |---|---|---|
 | [`wirenet.sh`](wirenet.sh) | **Any VPS** | Interactive Master TUI Menu with arrow-key navigation |
-| [`doctor.sh`](doctor.sh) | **Any VPS** | 6-point system health inspector & automated repair |
-| [`status.sh`](status.sh) | **Any VPS** | Live telemetry, peer table, and game ports dashboard |
-| [`troubleshoot.sh`](troubleshoot.sh) | **Any VPS** | Universal 1-click self-healing diagnostic & repair tool |
-| [`setup-gateway.sh`](setup-gateway.sh) | **Gateway VPS** | Deploys WireGuard Hub, port forwards, and Anti-DDoS Shield |
-| [`setup-node.sh`](setup-node.sh) | **Node VPS** | Interactive Node setup with automated `rinetd` Docker bridge |
-| [`forward-port.sh`](forward-port.sh) | **Gateway VPS** | 1-command custom port forwarder / translator |
-| [`add-ip-mapping.sh`](add-ip-mapping.sh) | **Gateway VPS** | Maps dedicated Public IPs to specific backend Nodes |
-| [`firewall.sh`](firewall.sh) | **Gateway VPS** | Controls the dynamic firewall (`status`, `enable`, `strict`, `disable`) |
-| [`uninstall.sh`](uninstall.sh) | **Any VPS** | Completely wipes WireNet services and configuration |
+| [`install.sh`](install.sh) | **Any VPS** | 1-command shortcut launcher for WireNet Control Center |
+| [`scripts/doctor.sh`](scripts/doctor.sh) | **Any VPS** | 6-point system health inspector & automated repair |
+| [`scripts/status.sh`](scripts/status.sh) | **Any VPS** | Live telemetry, peer table, and game ports dashboard |
+| [`scripts/troubleshoot.sh`](scripts/troubleshoot.sh) | **Any VPS** | Universal 1-click self-healing diagnostic & repair tool |
+| [`scripts/setup-gateway.sh`](scripts/setup-gateway.sh) | **Gateway VPS** | Deploys WireGuard Hub, port forwards, and Anti-DDoS Shield |
+| [`scripts/setup-node.sh`](scripts/setup-node.sh) | **Node VPS** | Interactive Node setup with automated `rinetd` Docker bridge |
+| [`scripts/forward-port.sh`](scripts/forward-port.sh) | **Gateway VPS** | 1-command custom port forwarder / translator |
+| [`scripts/add-ip-mapping.sh`](scripts/add-ip-mapping.sh) | **Gateway VPS** | Maps dedicated Public IPs to specific backend Nodes |
+| [`scripts/firewall.sh`](scripts/firewall.sh) | **Gateway VPS** | Controls the dynamic firewall (`status`, `enable`, `strict`, `disable`) |
+| [`scripts/uninstall.sh`](scripts/uninstall.sh) | **Any VPS** | Completely wipes WireNet services and configuration |
 
 ---
 

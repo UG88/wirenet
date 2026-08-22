@@ -8,7 +8,7 @@ Complete diagnostic reference and 1-click self-healing repair tools for WireNet 
 Run this single command on **either your Gateway VPS or Node VPS** — it automatically detects the server role, runs 5 health checks, and repairs any broken routes or port bridges:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/troubleshoot.sh | sudo bash
 ```
 
 ---
@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot.sh |
 **Solution**:
 Run the auto-repair tool on your **Node VPS**:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot-node.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/troubleshoot-node.sh | sudo bash
 ```
 *(This cleans conflicting NAT tables and ensures the `rinetd` port bridge forwards `10.200.0.2:25565` directly to Docker)*.
 
@@ -48,7 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot-node
    - Add **Custom UDP** | Port `0-65535` (or `25565-25600, 30000-40000`) | Source `0.0.0.0/0`
 2. **On Gateway VPS**: Run the Gateway auto-repair:
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/troubleshoot-gateway.sh | sudo bash
+   curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/troubleshoot-gateway.sh | sudo bash
    ```
 
 ---
@@ -84,7 +84,7 @@ When creating additional Pterodactyl nodes:
 
 1. **On the New Node VPS** (assigning `10.200.0.3`):
    ```bash
-   NODE_IP="10.200.0.3" curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/setup-node.sh | sudo bash
+   NODE_IP="10.200.0.3" curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/setup-node.sh | sudo bash
    ```
 2. **On your Gateway VPS**, authorize Node 2:
    ```bash
@@ -100,5 +100,5 @@ To route a specific Gateway public port to a different port or different node:
 
 ```bash
 # On Gateway VPS:
-curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/forward-port.sh | sudo bash -s -- 25567 10.200.0.3 25565
+curl -fsSL https://raw.githubusercontent.com/UG88/wirenet/main/scripts/forward-port.sh | sudo bash -s -- 25567 10.200.0.3 25565
 ```

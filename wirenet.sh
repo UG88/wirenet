@@ -25,7 +25,7 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-REPO_BASE="https://raw.githubusercontent.com/UG88/wirenet/main"
+REPO_BASE="https://raw.githubusercontent.com/UG88/wirenet/main/scripts"
 
 # Helper to fetch fresh scripts bypassing GitHub CDN cache
 fetch_script() {
