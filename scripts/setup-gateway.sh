@@ -73,16 +73,20 @@ Address = 10.200.0.1/24
 ListenPort = 51820
 PrivateKey = $GW_PRIVATE_KEY
 
-# Forwarding Rules (DNAT without Masquerading -> Real Player IPs Preserved!)
+# Forwarding Rules (DNAT + MASQUERADE)
 PostUp = iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT
 PostUp = iptables -t nat -A PREROUTING -i $DEFAULT_IFACE -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 10.200.0.2
 PostUp = iptables -t nat -A PREROUTING -i $DEFAULT_IFACE -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2
+PostUp = iptables -t nat -A POSTROUTING -o %i -j MASQUERADE
+PostUp = iptables -t nat -A POSTROUTING -o $DEFAULT_IFACE -j MASQUERADE
 
 PostDown = iptables -D FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
 PostDown = iptables -D FORWARD -i %i -j ACCEPT 2>/dev/null || true; iptables -D FORWARD -o %i -j ACCEPT 2>/dev/null || true
 PostDown = iptables -t nat -D PREROUTING -i $DEFAULT_IFACE -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
 PostDown = iptables -t nat -D PREROUTING -i $DEFAULT_IFACE -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
+PostDown = iptables -t nat -D POSTROUTING -o %i -j MASQUERADE 2>/dev/null || true
+PostDown = iptables -t nat -D POSTROUTING -o $DEFAULT_IFACE -j MASQUERADE 2>/dev/null || true
 EOF
 
 # 6. Apply Minecraft Anti-DDoS Filter Chains
