@@ -185,10 +185,26 @@ for port in $(seq 30000 30050); do
     echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
 done
 
-# 9. Clean conflicting iptables PREROUTING rules
+# 9. Clean conflicting iptables PREROUTING rules and ensure Docker MASQUERADE
 iptables -t nat -F PREROUTING 2>/dev/null || true
-iptables -t nat -F POSTROUTING 2>/dev/null || true
 iptables -t mangle -F 2>/dev/null || true
+
+# Ensure Docker containers can reach Outbound Internet (Mojang Auth & DNS)
+iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
+iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
+iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
+iptables -t nat -A POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
+
+# Configure Docker public DNS (Cloudflare + Google) if not configured
+mkdir -p /etc/docker
+if [[ ! -f /etc/docker/daemon.json ]] || ! grep -q "dns" /etc/docker/daemon.json 2>/dev/null; then
+    cat << 'EOF' > /etc/docker/daemon.json
+{
+  "dns": ["1.1.1.1", "8.8.8.8"]
+}
+EOF
+    systemctl restart docker 2>/dev/null || true
+fi
 
 # 10. Start and Enable Services
 systemctl enable --now wg-quick@wg0
