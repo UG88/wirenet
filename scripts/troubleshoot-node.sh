@@ -106,15 +106,15 @@ fi
 
 cat << EOF > /etc/rinetd.conf
 # WireNet Automated Docker Port Bridge
-# Node Virtual IP: $NODE_IP -> Host: $PRIMARY_IP
+# Node Virtual IP: $NODE_IP -> Loopback / Host: 127.0.0.1
 EOF
 
 for port in $(seq 25565 25700); do
-    echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
+    echo "$NODE_IP $port 127.0.0.1 $port" >> /etc/rinetd.conf
 done
 
 for port in $(seq 30000 30100); do
-    echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
+    echo "$NODE_IP $port 127.0.0.1 $port" >> /etc/rinetd.conf
 done
 
 systemctl enable --now rinetd 2>/dev/null || true
