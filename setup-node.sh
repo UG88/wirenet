@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet Pterodactyl Node Setup Script (Automated WireGuard + Docker Port Bridge)
+# WireNet Pterodactyl Node Setup Script (Interactive Node Selector + Port Bridge)
 # Works out of the box for ALL newly created servers with 0 manual intervention
 # ==============================================================================
 
@@ -48,7 +48,63 @@ sysctl --system >/dev/null 2>&1 || sysctl -w net.ipv4.ip_forward=1 net.ipv4.conf
 PRIMARY_IP=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || ip route get 1.1.1.1 | awk '{print $7; exit}')
 echo "[+] Detected Node Host IP: $PRIMARY_IP"
 
-# 4. Interactive prompt for Gateway credentials
+# 4. Interactive Node Number Selector
+NODE_NUMBER="${NODE_NUMBER:-}"
+NODE_IP="${NODE_IP:-}"
+
+if [[ -z "$NODE_IP" && -z "$NODE_NUMBER" ]]; then
+    echo ""
+    echo "=========================================================="
+    echo " Select Node Identity for this VPS:"
+    echo "  [1] Node 1 (IP: 10.200.0.2) [Default]"
+    echo "  [2] Node 2 (IP: 10.200.0.3)"
+    echo "  [3] Node 3 (IP: 10.200.0.4)"
+    echo "  [4] Node 4 (IP: 10.200.0.5)"
+    echo "  [5] Node 5 (IP: 10.200.0.6)"
+    echo "  [c] Custom IP (e.g. 10.200.0.10)"
+    echo "=========================================================="
+    
+    if [[ -e /dev/tty ]]; then
+        read -r -p "Enter Node Number [1-5 or c] (Default: 1): " NODE_CHOICE </dev/tty || NODE_CHOICE="1"
+    else
+        read -r -p "Enter Node Number [1-5 or c] (Default: 1): " NODE_CHOICE || NODE_CHOICE="1"
+    fi
+    
+    NODE_CHOICE="${NODE_CHOICE:-1}"
+    
+    case "$NODE_CHOICE" in
+        1) NODE_IP="10.200.0.2" ;;
+        2) NODE_IP="10.200.0.3" ;;
+        3) NODE_IP="10.200.0.4" ;;
+        4) NODE_IP="10.200.0.5" ;;
+        5) NODE_IP="10.200.0.6" ;;
+        c|C)
+            if [[ -e /dev/tty ]]; then
+                read -r -p "Enter Custom WireGuard IP (e.g. 10.200.0.10): " NODE_IP </dev/tty
+            else
+                read -r -p "Enter Custom WireGuard IP (e.g. 10.200.0.10): " NODE_IP
+            fi
+            ;;
+        *)
+            if [[ "$NODE_CHOICE" =~ ^10\.200\.0\.[0-9]+$ ]]; then
+                NODE_IP="$NODE_CHOICE"
+            elif [[ "$NODE_CHOICE" =~ ^[0-9]+$ ]]; then
+                NODE_OCTET=$((NODE_CHOICE + 1))
+                NODE_IP="10.200.0.${NODE_OCTET}"
+            else
+                NODE_IP="10.200.0.2"
+            fi
+            ;;
+    esac
+elif [[ -n "$NODE_NUMBER" ]]; then
+    NODE_OCTET=$((NODE_NUMBER + 1))
+    NODE_IP="10.200.0.${NODE_OCTET}"
+fi
+
+NODE_IP="${NODE_IP:-10.200.0.2}"
+echo "[+] Configured Node Virtual IP: $NODE_IP"
+
+# 5. Interactive prompt for Gateway credentials
 GW_ENDPOINT="${GW_ENDPOINT:-}"
 GW_PUBLIC_KEY="${GW_PUBLIC_KEY:-}"
 
@@ -73,7 +129,7 @@ if [[ -z "$GW_ENDPOINT" || -z "$GW_PUBLIC_KEY" ]]; then
     exit 1
 fi
 
-# 5. Generate Node Cryptographic Keys
+# 6. Generate Node Cryptographic Keys
 mkdir -p /etc/wireguard
 chmod 700 /etc/wireguard
 
@@ -83,11 +139,10 @@ if [[ ! -f /etc/wireguard/node_private.key ]]; then
     chmod 600 /etc/wireguard/node_private.key
 fi
 
-NODE_IP="${NODE_IP:-10.200.0.2}"
 NODE_PRIVATE_KEY=$(cat /etc/wireguard/node_private.key)
 NODE_PUBLIC_KEY=$(cat /etc/wireguard/node_public.key)
 
-# 6. Create WireGuard Configuration
+# 7. Create WireGuard Configuration
 cat << EOF > /etc/wireguard/wg0.conf
 [Interface]
 Address = $NODE_IP/24
@@ -108,18 +163,18 @@ AllowedIPs = 10.200.0.0/24
 PersistentKeepalive = 25
 EOF
 
-# 7. Configure Automated rinetd Bridge for all Minecraft / Game Ports
+# 8. Configure Automated rinetd Bridge for all Minecraft / Game Ports
 echo "[+] Configuring automated rinetd port bridge for game server ports..."
 mkdir -p /etc
 cat << EOF > /etc/rinetd.conf
-# WireNet Automated Docker Port Bridge
+# WireNet Automated Docker Port Bridge (Node IP: $NODE_IP)
 # Format: bindaddress bindport connectaddress connectport
 
 # Minecraft Standard Port
 $NODE_IP 25565 $PRIMARY_IP 25565
 EOF
 
-# Append port ranges 25566-25600 and 30000-30020
+# Append port ranges 25566-25600 and 30000-30050
 for port in $(seq 25566 25600); do
     echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
 done
@@ -128,12 +183,12 @@ for port in $(seq 30000 30050); do
     echo "$NODE_IP $port $PRIMARY_IP $port" >> /etc/rinetd.conf
 done
 
-# 8. Clean conflicting iptables PREROUTING rules
+# 9. Clean conflicting iptables PREROUTING rules
 iptables -t nat -F PREROUTING 2>/dev/null || true
 iptables -t nat -F POSTROUTING 2>/dev/null || true
 iptables -t mangle -F 2>/dev/null || true
 
-# 9. Start and Enable Services
+# 10. Start and Enable Services
 systemctl enable --now wg-quick@wg0
 systemctl restart wg-quick@wg0
 
