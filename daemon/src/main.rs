@@ -56,6 +56,8 @@ enum Commands {
     CheckUpdate,
     /// 1-Click Self Update to Latest GitHub Version
     Update,
+    /// Apply In-Place Real IP Routing Update (Preserves Existing Keys & Peers)
+    Apply,
     /// 100% Deep Cleaner & Complete Uninstaller
     Uninstall,
 }
@@ -202,6 +204,9 @@ async fn main() -> Result<()> {
         }
         Commands::Update => {
             UpdateManager::self_update()?;
+        }
+        Commands::Apply => {
+            SetupManager::apply_real_ip_routing()?;
         }
         Commands::Uninstall => {
             UninstallManager::deep_uninstall()?;

@@ -48,9 +48,10 @@ impl SetupManager {
             }
         };
 
-        // 4. Write /etc/wireguard/wg0.conf
+        // 4. Write /etc/wireguard/wg0.conf (Preserving any existing [Peer] blocks)
         println!("[4/5] Writing /etc/wireguard/wg0.conf configuration...");
         let default_iface = Self::get_default_iface();
+        let existing_peers = Self::extract_existing_peers();
         let wg_conf = format!(
             "[Interface]\n\
             Address = 10.200.0.1/24\n\
@@ -58,8 +59,9 @@ impl SetupManager {
             PrivateKey = {}\n\
             SaveConfig = false\n\n\
             PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -I FORWARD 1 -o wg0 -j ACCEPT; iptables -t nat -A PREROUTING -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2; iptables -t nat -A PREROUTING -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2; iptables -t nat -A POSTROUTING -o {} -j MASQUERADE\n\
-            PostDown = iptables -D FORWARD -i wg0 -j ACCEPT 2>/dev/null; iptables -D FORWARD -o wg0 -j ACCEPT 2>/dev/null; iptables -t nat -D PREROUTING -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D PREROUTING -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null\n",
-            priv_key, ports_start, ports_end, ports_start, ports_end, default_iface, ports_start, ports_end, ports_start, ports_end, default_iface
+            PostDown = iptables -D FORWARD -i wg0 -j ACCEPT 2>/dev/null; iptables -D FORWARD -o wg0 -j ACCEPT 2>/dev/null; iptables -t nat -D PREROUTING -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D PREROUTING -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null\n\n\
+            {}",
+            priv_key, ports_start, ports_end, ports_start, ports_end, default_iface, ports_start, ports_end, ports_start, ports_end, default_iface, existing_peers
         );
         fs::write("/etc/wireguard/wg0.conf", wg_conf)?;
 
@@ -78,11 +80,85 @@ impl SetupManager {
         println!(" Gateway Public Key : {}", pub_key);
         println!(" Game Port Range    : {}-{}", ports_start, ports_end);
         println!("==========================================================");
-        println!(" Next Step: On your Node VPS, run:");
-        println!("   wirenet setup node --gateway <YOUR_GATEWAY_PUBLIC_IP> --gateway-key \"{}\"", pub_key);
+        if existing_peers.is_empty() {
+            println!(" Next Step: On your Node VPS, run:");
+            println!("   wirenet setup node --gateway <YOUR_GATEWAY_PUBLIC_IP> --gateway-key \"{}\"", pub_key);
+        } else {
+            println!(" [✓] Existing authorized Node peers were preserved!");
+        }
         println!("==========================================================");
 
         Ok(())
+    }
+
+    /// Automatically applies Real IP Routing in place while keeping all existing keys and peers
+    pub fn apply_real_ip_routing() -> Result<()> {
+        println!("==========================================================");
+        println!(" ⚡ WireNet In-Place Real IP Routing Auto-Applier");
+        println!("==========================================================");
+
+        let is_gateway = fs::read_to_string("/etc/wireguard/wg0.conf")
+            .map(|c| c.contains("10.200.0.1/24"))
+            .unwrap_or(false)
+            || std::path::Path::new("/etc/wireguard/gateway_private.key").exists();
+
+        if is_gateway {
+            println!("[+] Detected Role: GATEWAY VPS (Hub)");
+            Self::setup_gateway(25565, 25700)?;
+        } else {
+            println!("[+] Detected Role: NODE VPS (Spoke)");
+            let mut gw_key = String::new();
+            let mut gw_endpoint = String::new();
+
+            if let Ok(c) = fs::read_to_string("/etc/wireguard/wg0.conf") {
+                for line in c.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("PublicKey") {
+                        if let Some(val) = trimmed.split('=').nth(1) {
+                            gw_key = val.trim().to_string();
+                        }
+                    } else if trimmed.starts_with("Endpoint") {
+                        if let Some(val) = trimmed.split('=').nth(1) {
+                            if let Some(ip) = val.trim().split(':').next() {
+                                gw_endpoint = ip.trim().to_string();
+                            }
+                        }
+                    }
+                }
+            }
+
+            if gw_key.is_empty() || gw_endpoint.is_empty() {
+                println!(" [!] Existing Gateway peer not found in /etc/wireguard/wg0.conf.");
+                println!(" Please run: wirenet setup node --gateway <IP> --gateway-key <KEY>");
+                return Ok(());
+            }
+
+            Self::setup_node(&gw_endpoint, &gw_key)?;
+        }
+
+        println!("==========================================================");
+        println!(" [✓] Real IP Routing Active! Existing Keys & Peers Preserved.");
+        println!("==========================================================");
+        Ok(())
+    }
+
+    fn extract_existing_peers() -> String {
+        if let Ok(existing) = fs::read_to_string("/etc/wireguard/wg0.conf") {
+            let mut peers_text = String::new();
+            let mut in_peer = false;
+            for line in existing.lines() {
+                if line.trim().starts_with("[Peer]") {
+                    in_peer = true;
+                }
+                if in_peer {
+                    peers_text.push_str(line);
+                    peers_text.push('\n');
+                }
+            }
+            peers_text
+        } else {
+            String::new()
+        }
     }
 
     /// Setup Node (Spoke) VPS
