@@ -59,34 +59,28 @@ sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.wg0.rp_filter=2 >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.eth0.rp_filter=2 >/dev/null 2>&1 || true
 
-# Set up CONNMARK connection tracking for asymmetric return path
+# Flush stale mangle and nat tables
 iptables -t mangle -F 2>/dev/null || true
-iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1
-iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark
-iptables -t mangle -A OUTPUT -j CONNMARK --restore-mark
-
-# Set up Policy Routing Table 100
-ip rule del fwmark 0x1 table 100 2>/dev/null || true
-ip rule add fwmark 0x1 table 100
-ip route flush table 100 2>/dev/null || true
-ip route add default via 10.200.0.1 dev wg0 table 100
-
-# Flush stale PREROUTING nat rules so rinetd port bridge receives tunnel traffic
 iptables -t nat -F PREROUTING 2>/dev/null || true
 
-# Allow tunnel traffic in firewall
-iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
+# Allow loopback, local subnet, and WireGuard tunnel input at top of INPUT chain
+iptables -I INPUT 1 -i lo -j ACCEPT 2>/dev/null || true
+iptables -I INPUT 2 -s 127.0.0.0/8 -j ACCEPT 2>/dev/null || true
+iptables -I INPUT 3 -i wg0 -j ACCEPT 2>/dev/null || true
+iptables -I INPUT 4 -s 10.200.0.0/24 -j ACCEPT 2>/dev/null || true
+iptables -I INPUT 5 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+
 iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
 iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true
 
-# Block direct public access on eth0 so backend Node IP is 100% hidden
+# Block direct public access from external internet on eth0 so backend Node IP is 100% hidden
 DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1 || echo "eth0")
 iptables -D INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
-iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
+iptables -A INPUT -i "$DEFAULT_IFACE" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true
 
 iptables -D INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
-iptables -I INPUT 1 -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
+iptables -A INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DROP 2>/dev/null || true
 
 # Ensure Docker outbound MASQUERADE for Mojang auth & DNS
 iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
