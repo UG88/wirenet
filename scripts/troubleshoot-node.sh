@@ -97,12 +97,6 @@ iptables -A INPUT -i "$DEFAULT_IFACE" -p udp -m multiport --dports 25565:25700,1
 iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
 iptables -t nat -D POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
-iptables -t nat -A POSTROUTING -s 10.200.0.0/24 -j MASQUERADE 2>/dev/null || true
-
-# Direct fallback DNAT to localhost (for host-networked Minecraft servers with route_localnet)
-iptables -t nat -A PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1
-iptables -t nat -A PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 127.0.0.1
-
 # Rebuild rinetd fallback bridge for compatibility
 if ! command -v rinetd >/dev/null 2>&1; then
     echo "  [+] Installing rinetd..."

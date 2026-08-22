@@ -53,12 +53,8 @@ iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
 iptables -t nat -D POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null || true
 iptables -t nat -A POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE
 
-# 3. Forward all game ports (25565-25700 and 30000-40000) to Node 1 across WireGuard
-iptables -t nat -D PREROUTING -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
-iptables -t nat -A PREROUTING -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 10.200.0.2
-
-iptables -t nat -D PREROUTING -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2 2>/dev/null || true
-iptables -t nat -A PREROUTING -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination 10.200.0.2
+# 3. Flush stale PREROUTING rules so rinetd ingress bridge receives all game traffic cleanly
+iptables -t nat -F PREROUTING 2>/dev/null || true
 
 # 4. Rebuild rinetd fallback bridge on Gateway
 if ! command -v rinetd >/dev/null 2>&1; then
