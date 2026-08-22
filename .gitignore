@@ -1,4 +1,6 @@
-*.key
-*.conf
-*.log
-.DS_Store
+/target
+target/
+daemon/target/
+*.exe
+*.pdb
+*.rmeta
