@@ -47,10 +47,13 @@ EOF
     chmod 755 "${BIN_PATH}" 2>/dev/null || true
 fi
 
-# Helper to fetch and run scripts (local first, GitHub fallback)
+# Helper to fetch and run scripts (Always fetches fresh from GitHub with local fallback)
 fetch_script() {
     local script_name="$1"
     shift
+    curl -fsSL -H "Cache-Control: no-cache" "${REPO_BASE}/scripts/${script_name}?$(date +%s)" -o "${INSTALL_DIR}/scripts/${script_name}" 2>/dev/null || true
+    chmod 755 "${INSTALL_DIR}/scripts/${script_name}" 2>/dev/null || true
+    
     if [[ -f "${INSTALL_DIR}/scripts/${script_name}" ]]; then
         sudo bash "${INSTALL_DIR}/scripts/${script_name}" "$@"
     else

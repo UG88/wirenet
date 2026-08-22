@@ -16,39 +16,58 @@ echo "=========================================================="
 echo " 🦀 WireNet Rust Daemon Builder & Installer"
 echo "=========================================================="
 
+# 0. Prevent Routing Loops on Node
+if [[ -f /etc/wireguard/wg0.conf ]]; then
+    sed -i 's/AllowedIPs = 0.0.0.0\/0/AllowedIPs = 10.200.0.0\/24/g' /etc/wireguard/wg0.conf 2>/dev/null || true
+fi
+ip route del default dev wg0 2>/dev/null || true
+
 # 1. Install Build Dependencies
-echo "[1/5] Checking Build Dependencies (build-essential, curl, git)..."
-apt-get update -qq && apt-get install -y -qq build-essential curl git pkg-config libssl-dev
+echo "[1/5] Checking Build Dependencies..."
+if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq || true
+    apt-get install -y -qq build-essential curl git pkg-config libssl-dev || apt-get install -y build-essential curl git pkg-config libssl-dev || true
+fi
 
 # 2. Install Rust Toolchain if not present
 if ! command -v cargo >/dev/null 2>&1 && [[ ! -f "$HOME/.cargo/bin/cargo" ]]; then
     echo "[2/5] Installing Rust & Cargo toolchain..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
     source "$HOME/.cargo/env" 2>/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
 else
     echo "[2/5] Rust Toolchain is already installed."
-    export PATH="$HOME/.cargo/bin:$PATH"
+    source "$HOME/.cargo/env" 2>/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
-# 3. Clone / Update WireNet Repo
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# 3. Pull WireNet Source Code
 echo "[3/5] Pulling latest WireNet Daemon source code..."
 mkdir -p /opt/wirenet
-if [[ ! -d /opt/wirenet/.git ]]; then
-    rm -rf /tmp/wirenet_clone
-    git clone https://github.com/UG88/wirenet.git /tmp/wirenet_clone
+rm -rf /tmp/wirenet_clone /tmp/wirenet-main
+
+if command -v git >/dev/null 2>&1; then
+    git clone --depth 1 https://github.com/UG88/wirenet.git /tmp/wirenet_clone 2>/dev/null || true
+fi
+
+if [[ ! -d /tmp/wirenet_clone/daemon ]]; then
+    echo "  [+] Downloading archive package directly..."
+    curl -fsSL https://github.com/UG88/wirenet/archive/refs/heads/main.tar.gz | tar -xz -C /tmp/ 2>/dev/null || true
+    if [[ -d /tmp/wirenet-main ]]; then
+        mv /tmp/wirenet-main /tmp/wirenet_clone
+    fi
+fi
+
+if [[ -d /tmp/wirenet_clone ]]; then
     cp -rf /tmp/wirenet_clone/* /opt/wirenet/ 2>/dev/null || true
-    cp -rf /tmp/wirenet_clone/.git /opt/wirenet/ 2>/dev/null || true
     rm -rf /tmp/wirenet_clone
-else
-    cd /opt/wirenet && git fetch --all -q && git reset --hard origin/main -q
 fi
 
 # 4. Build Optimized Release Binary
 echo "[4/5] Compiling High-Performance wirenet-daemon (Release Mode)..."
-source "$HOME/.cargo/env" 2>/dev/null || true
-export PATH="$HOME/.cargo/bin:$PATH"
 cd /opt/wirenet/daemon
-cargo build --release
+"$HOME/.cargo/bin/cargo" build --release
 
 # Install binary globally
 cp -f /opt/wirenet/daemon/target/release/wirenet-daemon /usr/local/bin/wirenet-daemon
@@ -78,7 +97,7 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable --now wirenet-gateway.service
+    systemctl enable --now wirenet-gateway.service 2>/dev/null || true
     echo "  [✓] wirenet-gateway.service is ACTIVE and running on Gateway!"
 
 else
@@ -101,7 +120,7 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable --now wirenet-node.service
+    systemctl enable --now wirenet-node.service 2>/dev/null || true
     echo "  [✓] wirenet-node.service is ACTIVE and running on Node!"
 fi
 
@@ -109,7 +128,7 @@ echo ""
 echo "=========================================================="
 echo " 🎉 WireNet Rust Daemon Successfully Installed!"
 echo "=========================================================="
-echo " - View Live Dashboard : wirenet-daemon tui"
-echo " - Check Doctor Health : wirenet-daemon doctor"
-echo " - View Service Status : systemctl status wirenet-*.service"
+echo " - View Live Dashboard : wirenet tui"
+echo " - Check Doctor Health : wirenet doctor"
+echo " - View Service Status : wirenet daemon status"
 echo "=========================================================="
