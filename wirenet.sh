@@ -109,6 +109,8 @@ update_wirenet() {
         "troubleshoot-gateway.sh"
         "troubleshoot-node.sh"
         "wirenet-watcher.sh"
+        "setup-realip.sh"
+        "setup-proxy-protocol.sh"
         "forward-port.sh"
         "add-ip-mapping.sh"
         "firewall.sh"
