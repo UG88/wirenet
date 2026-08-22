@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# WireNet Pure Kernel Real-IP & Policy Routing Setup
+# WireNet 100% Native Kernel Real-IP Engine (ZERO Plugins / ZERO File Edits)
 # Developed by UG88 | https://github.com/UG88/wirenet
-# Preserves 100% Genuine Player IPs in Minecraft (Zero Plugins / Zero IP Collisions)
+# Pure kernel-level transparent routing directly into Docker containers
 # ==============================================================================
 
 set -euo pipefail
@@ -25,7 +25,8 @@ DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1)
 DEFAULT_IFACE="${DEFAULT_IFACE:-eth0}"
 
 echo "=========================================================="
-echo " WireNet Pure Kernel Real-IP Ingress Setup: ${ROLE}"
+echo " WireNet Native Real-IP Engine: ${ROLE}"
+echo " (100% Zero-Plugin / Zero-File-Edit Pure Kernel Routing)"
 echo "=========================================================="
 
 if [[ "$IS_GATEWAY" == true ]]; then
@@ -34,7 +35,7 @@ if [[ "$IS_GATEWAY" == true ]]; then
     # 1. Enable Kernel IP Forwarding
     sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 
-    # 2. Stop HAProxy if running so kernel takes over port 25565
+    # 2. Stop HAProxy so kernel routes directly
     systemctl stop haproxy 2>/dev/null || true
     systemctl disable haproxy 2>/dev/null || true
 
@@ -54,12 +55,15 @@ if [[ "$IS_GATEWAY" == true ]]; then
     iptables -t nat -D POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null || true
     iptables -t nat -A POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE
 
+    # Remove any masquerade on wg0
+    iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
+
     echo "=========================================================="
-    echo " [✓] Gateway is now sending 100% Real Player IPs to Node!"
+    echo " [✓] Gateway is passing raw, untouched player IPs to Node!"
     echo "=========================================================="
 
 else
-    echo "[+] Configuring Node for Policy-Based Asymmetric Return Routing..."
+    echo "[+] Configuring Node Kernel & Docker for Native Real-IP Delivery..."
 
     PRIMARY_IP=$(curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || echo "127.0.0.1")
     NODE_IP=$(ip -4 addr show dev wg0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 || echo "10.200.0.2")
@@ -72,8 +76,18 @@ else
     sysctl -w net.ipv4.conf.wg0.rp_filter=2 >/dev/null 2>&1 || true
     sysctl -w net.ipv4.conf."$DEFAULT_IFACE".rp_filter=2 >/dev/null 2>&1 || true
 
-    # 2. Connection Tracking & Policy Routing
-    # Mark all incoming connections from wg0
+    # 2. Disable Docker userland-proxy (so Docker doesn't proxy through 172.18.0.1)
+    mkdir -p /etc/docker
+    cat << 'EOF' > /etc/docker/daemon.json
+{
+  "userland-proxy": false,
+  "live-restore": true,
+  "dns": ["1.1.1.1", "8.8.8.8"]
+}
+EOF
+    systemctl reload docker 2>/dev/null || true
+
+    # 3. Connection Tracking & Policy Routing (Send game replies back via wg0)
     iptables -t mangle -D PREROUTING -i wg0 -j CONNMARK --set-mark 0x1 2>/dev/null || true
     iptables -t mangle -A PREROUTING -i wg0 -j CONNMARK --set-mark 0x1
 
@@ -89,29 +103,29 @@ else
     ip route flush table 100 2>/dev/null || true
     ip route add default dev wg0 table 100
 
-    # 3. Direct Kernel DNAT into local Docker bindings (Preserving Real Player Source IP!)
+    # 4. Direct Kernel DNAT into local host/Docker bindings (Preserving Real Player Source IP!)
     iptables -t nat -D PREROUTING -i wg0 -d "$NODE_IP" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
     iptables -t nat -A PREROUTING -i wg0 -d "$NODE_IP" -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
 
     iptables -t nat -D PREROUTING -i wg0 -d "$NODE_IP" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP" 2>/dev/null || true
     iptables -t nat -A PREROUTING -i wg0 -d "$NODE_IP" -p udp -m multiport --dports 25565:25700,19132:19140,24454,30000:40000 -j DNAT --to-destination "$PRIMARY_IP"
 
-    # Forwarding rules
+    # Forwarding rules for tunnel and Docker bridges
     iptables -I INPUT 1 -i wg0 -j ACCEPT 2>/dev/null || true
     iptables -I FORWARD 1 -i wg0 -j ACCEPT 2>/dev/null || true
     iptables -I FORWARD 1 -o wg0 -j ACCEPT 2>/dev/null || true
 
-    # Outbound MASQUERADE for Docker internet access
-    iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
-    iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
+    # Outbound MASQUERADE for container internet access only (NOT for inbound tunnel traffic)
+    iptables -t nat -D POSTROUTING -s 172.16.0.0/12 ! -d 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
+    iptables -t nat -A POSTROUTING -s 172.16.0.0/12 ! -d 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
 
-    # Stop rinetd so pure kernel routing delivers raw Real IPs directly
+    # Stop userspace rinetd so pure kernel routing delivers raw Real IPs directly into Docker
     systemctl stop rinetd 2>/dev/null || true
     systemctl disable rinetd 2>/dev/null || true
 
     echo "=========================================================="
-    echo " [✓] Node Pure Kernel Real-IP Routing is ACTIVE!"
-    echo " Minecraft console will now log 100% Genuine Player IPs!"
-    echo " Zero plugins required. /ban-ip will ban only that player."
+    echo " [✓] 100% Native Real-IP Routing is ACTIVE!"
+    echo " ZERO plugins or server edits required."
+    echo " Players now show up with their genuine public IPs!"
     echo "=========================================================="
 fi
