@@ -94,18 +94,27 @@ impl DoctorManager {
         // 6. Game Port Testing (TCP Socket probe)
         println!("[6/6] Probing Game Server Ports (25565)...");
         let timeout = Duration::from_millis(1500);
+        let primary_ip = Self::get_primary_ip();
         let targets = [
-            ("Local Game Socket (127.0.0.1:25565)", "127.0.0.1:25565"),
-            ("Node Tunnel IP (10.200.0.2:25565)", "10.200.0.2:25565"),
-            ("Gateway Tunnel IP (10.200.0.1:25565)", "10.200.0.1:25565"),
+            (format!("Primary Node IP ({}:25565)", primary_ip), format!("{}:25565", primary_ip)),
+            ("Local Host Loopback (127.0.0.1:25565)".to_string(), "127.0.0.1:25565".to_string()),
+            ("Node Tunnel IP (10.200.0.2:25565)".to_string(), "10.200.0.2:25565".to_string()),
+            ("Gateway Tunnel IP (10.200.0.1:25565)".to_string(), "10.200.0.1:25565".to_string()),
         ];
 
-        for (label, addr_str) in targets {
+        let mut any_open = false;
+        for (label, addr_str) in &targets {
             if let Ok(socket_addr) = addr_str.parse::<SocketAddr>() {
                 if TcpStream::connect_timeout(&socket_addr, timeout).is_ok() {
                     println!("  [✓] Port OPEN: Successfully connected to {}", label);
+                    any_open = true;
                 }
             }
+        }
+
+        if !any_open {
+            println!("  [!] Warning: Port 25565 is not reachable on any local/tunnel interface.");
+            println!("  [!] Please ensure your Minecraft server is started in Pterodactyl!");
         }
 
         println!("==========================================================");
@@ -113,5 +122,19 @@ impl DoctorManager {
         println!("==========================================================");
 
         Ok(())
+    }
+
+    fn get_primary_ip() -> String {
+        let out = Command::new("ip").args(["route", "get", "1.1.1.1"]).output();
+        if let Ok(o) = out {
+            let s = String::from_utf8_lossy(&o.stdout);
+            let parts: Vec<&str> = s.split_whitespace().collect();
+            if let Some(idx) = parts.iter().position(|&r| r == "src") {
+                if let Some(ip) = parts.get(idx + 1) {
+                    return ip.to_string();
+                }
+            }
+        }
+        "127.0.0.1".to_string()
     }
 }

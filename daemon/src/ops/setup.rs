@@ -214,19 +214,20 @@ impl SetupManager {
         // 4. Write /etc/wireguard/wg0.conf with Policy Routing (Table = off & AllowedIPs = 0.0.0.0/0)
         println!("[4/5] Configuring WireGuard Node Interface & Symmetric Return Rules...");
         let default_iface = Self::get_default_iface();
+        let primary_ip = Self::get_primary_ip();
         let wg_conf = format!(
             "[Interface]\n\
             Address = 10.200.0.2/24\n\
             PrivateKey = {}\n\
             Table = off\n\n\
-            PostUp = sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1; sysctl -w net.ipv4.conf.wg0.route_localnet=1 >/dev/null 2>&1; sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null 2>&1; sysctl -w net.ipv4.conf.wg0.rp_filter=2 >/dev/null 2>&1; ip rule add fwmark 0x1 table 100 2>/dev/null || true; ip route add default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1; iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark; iptables -t mangle -A OUTPUT -j CONNMARK --restore-mark; iptables -I INPUT 1 -i wg0 -j ACCEPT; iptables -I INPUT 1 -i lo -j ACCEPT; iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -I FORWARD 1 -o wg0 -j ACCEPT; iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true; iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1; iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1; iptables -A INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP; iptables -A INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP\n\
-            PostDown = ip rule del fwmark 0x1 table 100 2>/dev/null || true; ip route del default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null || true; iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1 2>/dev/null || true; iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1 2>/dev/null || true; iptables -D INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true; iptables -D INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true\n\n\
+            PostUp = sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1; sysctl -w net.ipv4.conf.wg0.route_localnet=1 >/dev/null 2>&1; sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null 2>&1; sysctl -w net.ipv4.conf.wg0.rp_filter=2 >/dev/null 2>&1; ip rule add fwmark 0x1 table 100 2>/dev/null || true; ip route add default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1; iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark; iptables -t mangle -A OUTPUT -j CONNMARK --restore-mark; iptables -I INPUT 1 -i wg0 -j ACCEPT; iptables -I INPUT 1 -i lo -j ACCEPT; iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -I FORWARD 1 -o wg0 -j ACCEPT; iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true; iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}:25565-25700; iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}:25565-25700; iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}:25565-25700; iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}:25565-25700; iptables -A INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP; iptables -A INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP\n\
+            PostDown = ip rule del fwmark 0x1 table 100 2>/dev/null || true; ip route del default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null || true; iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}:25565-25700 2>/dev/null || true; iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}:25565-25700 2>/dev/null || true; iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}:25565-25700 2>/dev/null || true; iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}:25565-25700 2>/dev/null || true; iptables -D INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true; iptables -D INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true\n\n\
             [Peer]\n\
             PublicKey = {}\n\
             Endpoint = {}:51820\n\
             AllowedIPs = 0.0.0.0/0\n\
             PersistentKeepalive = 15\n",
-            priv_key, default_iface, default_iface, default_iface, default_iface, gateway_pub_key, gateway_ip
+            priv_key, primary_ip, primary_ip, primary_ip, primary_ip, default_iface, default_iface, primary_ip, primary_ip, primary_ip, primary_ip, default_iface, default_iface, gateway_pub_key, gateway_ip
         );
         fs::write("/etc/wireguard/wg0.conf", wg_conf)?;
 
@@ -330,5 +331,19 @@ impl SetupManager {
             return Err(anyhow::anyhow!("wg pubkey returned an empty string"));
         }
         Ok(pub_key)
+    }
+
+    fn get_primary_ip() -> String {
+        let out = Command::new("ip").args(["route", "get", "1.1.1.1"]).output();
+        if let Ok(o) = out {
+            let s = String::from_utf8_lossy(&o.stdout);
+            let parts: Vec<&str> = s.split_whitespace().collect();
+            if let Some(idx) = parts.iter().position(|&r| r == "src") {
+                if let Some(ip) = parts.get(idx + 1) {
+                    return ip.to_string();
+                }
+            }
+        }
+        "127.0.0.1".to_string()
     }
 }
