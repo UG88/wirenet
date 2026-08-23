@@ -14,21 +14,74 @@ impl DockerWatcher {
 
     /// Scans currently running Docker containers for Minecraft/Game port allocations
     pub async fn scan_active_ports(&self) -> Result<Vec<PortMapping>> {
-        let mut mappings = Vec::new();
+        // 1. First priority: Direct Docker CLI inspect
+        let cli_ports = self.scan_via_docker_cli();
+        if !cli_ports.is_empty() {
+            return Ok(cli_ports);
+        }
 
-        // On Linux, inspect via /var/run/docker.sock or docker cli fallback
+        // 2. Second priority: Docker Unix domain socket inspect
         #[cfg(unix)]
         {
             if self.socket_path.exists() {
                 if let Ok(ports) = self.scan_via_unix_socket().await {
-                    return Ok(ports);
+                    if !ports.is_empty() {
+                        return Ok(ports);
+                    }
                 }
             }
         }
 
-        // Fallback: Check local listening ports via ss/netstat
-        mappings.extend(self.scan_listening_ports().await);
-        Ok(mappings)
+        // 3. Fallback: Check local listening ports via default range
+        Ok(self.scan_listening_ports().await)
+    }
+
+    fn scan_via_docker_cli(&self) -> Vec<PortMapping> {
+        let mut mappings = Vec::new();
+        let out = std::process::Command::new("docker")
+            .args(["ps", "--format", "{{.Ports}}\t{{.Names}}"])
+            .output();
+
+        if let Ok(o) = out {
+            let s = String::from_utf8_lossy(&o.stdout);
+            for line in s.lines() {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.is_empty() { continue; }
+                let ports_str = parts[0];
+                let name = parts.get(1).map(|&n| n.to_string());
+
+                for port_part in ports_str.split(',') {
+                    let trimmed = port_part.trim();
+                    if let Some(arrow_idx) = trimmed.find("->") {
+                        let host_side = &trimmed[..arrow_idx];
+                        let container_side = &trimmed[arrow_idx + 2..];
+
+                        let port_num = host_side.split(':').last()
+                            .and_then(|p| p.parse::<u16>().ok())
+                            .unwrap_or(0);
+
+                        let proto = if container_side.contains("/udp") {
+                            ProtocolType::Udp
+                        } else if container_side.contains("/tcp") {
+                            ProtocolType::Tcp
+                        } else {
+                            ProtocolType::Both
+                        };
+
+                        if port_num >= 1024 && !mappings.iter().any(|m: &PortMapping| m.port == port_num) {
+                            mappings.push(PortMapping {
+                                port: port_num,
+                                protocol: proto,
+                                container_ip: None,
+                                container_port: port_num,
+                                server_name: name.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        mappings
     }
 
     #[cfg(unix)]

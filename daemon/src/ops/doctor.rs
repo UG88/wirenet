@@ -92,29 +92,47 @@ impl DoctorManager {
         println!("  [✓] WireGuard Forwarding & Ingress Chains: VERIFIED");
 
         // 6. Game Port Testing (TCP Socket probe)
-        println!("[6/6] Probing Game Server Ports (25565)...");
+        println!("[6/6] Probing Game Server Ports & Docker Containers...");
+        let docker_ports = Self::scan_docker_ports();
+        if !docker_ports.is_empty() {
+            println!("  [+] Discovered Running Pterodactyl Game Servers:");
+            for (name, port, proto) in &docker_ports {
+                println!("      • Server: {:<20} | Port: {:<5} | Protocol: {}", name, port, proto);
+            }
+        }
+
         let timeout = Duration::from_millis(1500);
         let primary_ip = Self::get_primary_ip();
-        let targets = [
-            (format!("Primary Node IP ({}:25565)", primary_ip), format!("{}:25565", primary_ip)),
-            ("Local Host Loopback (127.0.0.1:25565)".to_string(), "127.0.0.1:25565".to_string()),
-            ("Node Tunnel IP (10.200.0.2:25565)".to_string(), "10.200.0.2:25565".to_string()),
-            ("Gateway Tunnel IP (10.200.0.1:25565)".to_string(), "10.200.0.1:25565".to_string()),
-        ];
+        
+        let mut test_ports = vec![25565];
+        for (_, p, _) in &docker_ports {
+            if !test_ports.contains(p) {
+                test_ports.push(*p);
+            }
+        }
 
         let mut any_open = false;
-        for (label, addr_str) in &targets {
-            if let Ok(socket_addr) = addr_str.parse::<SocketAddr>() {
-                if TcpStream::connect_timeout(&socket_addr, timeout).is_ok() {
-                    println!("  [✓] Port OPEN: Successfully connected to {}", label);
-                    any_open = true;
+        for &p in &test_ports {
+            let targets = [
+                (format!("Primary Node IP ({}:{})", primary_ip, p), format!("{}:{}", primary_ip, p)),
+                (format!("Local Loopback (127.0.0.1:{})", p), format!("127.0.0.1:{}", p)),
+                (format!("Node Tunnel IP (10.200.0.2:{})", p), format!("10.200.0.2:{}", p)),
+                (format!("Gateway Tunnel IP (10.200.0.1:{})", p), format!("10.200.0.1:{}", p)),
+            ];
+
+            for (label, addr_str) in &targets {
+                if let Ok(socket_addr) = addr_str.parse::<SocketAddr>() {
+                    if TcpStream::connect_timeout(&socket_addr, timeout).is_ok() {
+                        println!("  [✓] Port {} OPEN: Successfully connected to {}", p, label);
+                        any_open = true;
+                    }
                 }
             }
         }
 
         if !any_open {
-            println!("  [!] Warning: Port 25565 is not reachable on any local/tunnel interface.");
-            println!("  [!] Please ensure your Minecraft server is started in Pterodactyl!");
+            println!("  [!] Warning: No open game sockets detected on local/tunnel interfaces.");
+            println!("  [!] Please ensure your Minecraft/game server is started in Pterodactyl!");
         }
 
         println!("==========================================================");
@@ -122,6 +140,48 @@ impl DoctorManager {
         println!("==========================================================");
 
         Ok(())
+    }
+
+    fn scan_docker_ports() -> Vec<(String, u16, String)> {
+        let mut results = Vec::new();
+        let out = Command::new("docker")
+            .args(["ps", "--format", "{{.Ports}}\t{{.Names}}"])
+            .output();
+
+        if let Ok(o) = out {
+            let s = String::from_utf8_lossy(&o.stdout);
+            for line in s.lines() {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.is_empty() { continue; }
+                let ports_str = parts[0];
+                let name = parts.get(1).unwrap_or(&"Container").to_string();
+
+                for port_part in ports_str.split(',') {
+                    let trimmed = port_part.trim();
+                    if let Some(arrow_idx) = trimmed.find("->") {
+                        let host_side = &trimmed[..arrow_idx];
+                        let container_side = &trimmed[arrow_idx + 2..];
+
+                        let port_num = host_side.split(':').last()
+                            .and_then(|p| p.parse::<u16>().ok())
+                            .unwrap_or(0);
+
+                        let proto = if container_side.contains("/udp") {
+                            "UDP".to_string()
+                        } else if container_side.contains("/tcp") {
+                            "TCP".to_string()
+                        } else {
+                            "TCP/UDP".to_string()
+                        };
+
+                        if port_num >= 1024 && !results.iter().any(|(_, p, _)| *p == port_num) {
+                            results.push((name.clone(), port_num, proto));
+                        }
+                    }
+                }
+            }
+        }
+        results
     }
 
     fn get_primary_ip() -> String {
