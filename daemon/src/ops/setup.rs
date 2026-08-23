@@ -233,6 +233,8 @@ impl SetupManager {
 
         // 5. Activate Interface & Systemd Service
         println!("[5/5] Activating WireGuard wg0 interface...");
+        let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
+        let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
         let _ = Command::new("systemctl").args(["enable", "--now", "wg-quick@wg0"]).output();
         let _ = Command::new("systemctl").args(["restart", "wg-quick@wg0"]).output();
 
