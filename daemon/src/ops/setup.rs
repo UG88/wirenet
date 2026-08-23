@@ -219,8 +219,8 @@ impl SetupManager {
             Address = 10.200.0.2/24\n\
             PrivateKey = {}\n\
             Table = off\n\n\
-            PostUp = ip rule add fwmark 0x1 table 100 2>/dev/null || true\n\
-            PostUp = ip route add default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true\n\
+            PostUp = ip rule add fwmark 0x1 table 100\n\
+            PostUp = ip route add default via 10.200.0.1 dev wg0 table 100\n\
             PostUp = iptables -t mangle -I PREROUTING 1 -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1\n\
             PostUp = iptables -t mangle -I PREROUTING 1 -j CONNMARK --restore-mark\n\
             PostUp = iptables -t mangle -I OUTPUT 1 -j CONNMARK --restore-mark\n\
@@ -228,20 +228,19 @@ impl SetupManager {
             PostUp = iptables -I INPUT 1 -i lo -j ACCEPT\n\
             PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT\n\
             PostUp = iptables -I FORWARD 1 -o wg0 -j ACCEPT\n\
-            PostUp = iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true\n\
             PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\n\
-            PostDown = ip rule del fwmark 0x1 table 100 2>/dev/null || true\n\
-            PostDown = ip route del default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true\n\
-            PostDown = iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null || true\n\
-            PostDown = iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark 2>/dev/null || true\n\
-            PostDown = iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark 2>/dev/null || true\n\
-            PostDown = iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true\n\
-            PostDown = iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true\n\
-            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true\n\
-            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true\n\n\
+            PostDown = ip rule del fwmark 0x1 table 100\n\
+            PostDown = ip route del default via 10.200.0.1 dev wg0 table 100\n\
+            PostDown = iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1\n\
+            PostDown = iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark\n\
+            PostDown = iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark\n\
+            PostDown = iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostDown = iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\n\
             [Peer]\n\
             PublicKey = {}\n\
             Endpoint = {}:51820\n\
@@ -255,8 +254,13 @@ impl SetupManager {
         println!("[5/5] Activating WireGuard wg0 interface...");
         let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
         let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
+        let up = Command::new("wg-quick").args(["up", "wg0"]).output();
+        if let Ok(ref u) = up {
+            if !u.status.success() {
+                println!("  [!] Notice: {}", String::from_utf8_lossy(&u.stderr).trim());
+            }
+        }
         let _ = Command::new("systemctl").args(["enable", "--now", "wg-quick@wg0"]).output();
-        let _ = Command::new("systemctl").args(["restart", "wg-quick@wg0"]).output();
 
         // Create wirenet-node.service
         Self::install_node_systemd(gateway_ip)?;

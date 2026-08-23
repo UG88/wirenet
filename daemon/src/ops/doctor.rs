@@ -39,7 +39,15 @@ impl DoctorManager {
                 println!("  [!] Interface wg0 is DOWN. Auto-healing interface...");
                 let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
                 let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
-                let _ = Command::new("systemctl").args(["restart", "wg-quick@wg0"]).output();
+                let up_out = Command::new("wg-quick").args(["up", "wg0"]).output();
+                if let Ok(ref u) = up_out {
+                    if u.status.success() {
+                        println!("  [✓] Interface wg0 brought UP successfully!");
+                        let _ = Command::new("systemctl").args(["enable", "--now", "wg-quick@wg0"]).output();
+                    } else {
+                        println!("  [!] wg-quick error: {}", String::from_utf8_lossy(&u.stderr).trim());
+                    }
+                }
             }
         }
 
