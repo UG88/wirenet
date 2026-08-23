@@ -116,17 +116,22 @@ impl SetupManager {
                 for line in c.lines() {
                     let trimmed = line.trim();
                     if trimmed.starts_with("PublicKey") {
-                        if let Some(val) = trimmed.split('=').nth(1) {
+                        if let Some((_, val)) = trimmed.split_once('=') {
                             gw_key = val.trim().to_string();
                         }
                     } else if trimmed.starts_with("Endpoint") {
-                        if let Some(val) = trimmed.split('=').nth(1) {
+                        if let Some((_, val)) = trimmed.split_once('=') {
                             if let Some(ip) = val.trim().split(':').next() {
                                 gw_endpoint = ip.trim().to_string();
                             }
                         }
                     }
                 }
+            }
+
+            // Auto-repair base64 padding if trailing '=' was stripped
+            if gw_key.len() == 43 {
+                gw_key.push('=');
             }
 
             if gw_key.is_empty() || gw_endpoint.is_empty() {
