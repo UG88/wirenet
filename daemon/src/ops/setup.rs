@@ -266,7 +266,11 @@ impl SetupManager {
             Address = 10.200.0.2/24\n\
             PrivateKey = {}\n\
             Table = off\n\n\
+            PostUp = sysctl -w net.ipv4.conf.all.rp_filter=0\n\
+            PostUp = sysctl -w net.ipv4.conf.default.rp_filter=0\n\
+            PostUp = sysctl -w net.ipv4.conf.wg0.rp_filter=0\n\
             PostUp = ip rule add fwmark 0x1 table 100\n\
+            PostUp = ip route add 10.200.0.0/24 dev wg0 table 100\n\
             PostUp = ip route add default via 10.200.0.1 dev wg0 table 100\n\
             PostUp = iptables -t mangle -I PREROUTING 1 -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1\n\
             PostUp = iptables -t mangle -I PREROUTING 1 -j CONNMARK --restore-mark\n\
@@ -275,6 +279,8 @@ impl SetupManager {
             PostUp = iptables -I INPUT 1 -i lo -j ACCEPT\n\
             PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT\n\
             PostUp = iptables -I FORWARD 1 -o wg0 -j ACCEPT\n\
+            PostUp = iptables -I DOCKER-USER 1 -i wg0 -j ACCEPT\n\
+            PostUp = iptables -I DOCKER-USER 1 -o wg0 -j ACCEPT\n\
             PostUp = iptables -I DOCKER-USER 1 -j ACCEPT\n\
             PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\

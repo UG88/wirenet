@@ -96,7 +96,13 @@ impl DoctorManager {
 
         // 5. Firewall Integrity & Localnet Fix
         println!("[5/6] Verifying Firewall & Policy Routing Rules...");
+        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.rp_filter=0"]).output();
+        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.rp_filter=0"]).output();
+        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.wg0.rp_filter=0"]).output();
         let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-j", "ACCEPT"]).output();
+        let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-i", "wg0", "-j", "ACCEPT"]).output();
+        let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-o", "wg0", "-j", "ACCEPT"]).output();
+        let _ = Command::new("iptables").args(["-I", "DOCKER-USER", "1", "-j", "ACCEPT"]).output();
         let _ = Command::new("iptables").args(["-I", "INPUT", "1", "-i", "wg0", "-j", "ACCEPT"]).output();
         let _ = Command::new("iptables").args(["-I", "INPUT", "1", "-i", "lo", "-j", "ACCEPT"]).output();
         println!("  [✓] WireGuard Forwarding & Ingress Chains: VERIFIED");
@@ -106,8 +112,8 @@ impl DoctorManager {
         let docker_ports = Self::scan_docker_ports();
         if !docker_ports.is_empty() {
             println!("  [+] Discovered Running Pterodactyl Game Servers:");
-            for (name, port, proto) in &docker_ports {
-                println!("      • Server: {:<20} | Port: {:<5} | Protocol: {}", name, port, proto);
+            for (name, port, cip, proto) in &docker_ports {
+                println!("      • Server: {:<20} | Port: {:<5} | Container IP: {:<15} | Protocol: {}", name, port, cip, proto);
             }
         }
 
@@ -115,7 +121,7 @@ impl DoctorManager {
         let primary_ip = Self::get_primary_ip();
         
         let mut test_ports = vec![25565];
-        for (_, p, _) in &docker_ports {
+        for (_, p, _, _) in &docker_ports {
             if !test_ports.contains(p) {
                 test_ports.push(*p);
             }
@@ -152,19 +158,31 @@ impl DoctorManager {
         Ok(())
     }
 
-    fn scan_docker_ports() -> Vec<(String, u16, String)> {
+    fn scan_docker_ports() -> Vec<(String, u16, String, String)> {
         let mut results = Vec::new();
         let out = Command::new("docker")
-            .args(["ps", "--format", "{{.Ports}}\t{{.Names}}"])
+            .args(["ps", "--format", "{{.ID}}\t{{.Ports}}\t{{.Names}}"])
             .output();
 
         if let Ok(o) = out {
             let s = String::from_utf8_lossy(&o.stdout);
             for line in s.lines() {
                 let parts: Vec<&str> = line.split('\t').collect();
-                if parts.is_empty() { continue; }
-                let ports_str = parts[0];
-                let name = parts.get(1).unwrap_or(&"Container").to_string();
+                if parts.len() < 2 { continue; }
+                let cid = parts[0];
+                let ports_str = parts[1];
+                let name = parts.get(2).unwrap_or(&"Container").to_string();
+
+                let ip_out = Command::new("docker")
+                    .args(["inspect", cid, "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"])
+                    .output();
+                let cip = match ip_out {
+                    Ok(io) => {
+                        let ip_s = String::from_utf8_lossy(&io.stdout).trim().to_string();
+                        if !ip_s.is_empty() { ip_s } else { "127.0.0.1".to_string() }
+                    }
+                    _ => "127.0.0.1".to_string(),
+                };
 
                 for port_part in ports_str.split(',') {
                     let trimmed = port_part.trim();
@@ -184,8 +202,8 @@ impl DoctorManager {
                             "TCP/UDP".to_string()
                         };
 
-                        if port_num >= 1024 && !results.iter().any(|(_, p, _)| *p == port_num) {
-                            results.push((name.clone(), port_num, proto));
+                        if port_num >= 1024 && !results.iter().any(|(_, p, _, _)| *p == port_num) {
+                            results.push((name.clone(), port_num, cip.clone(), proto));
                         }
                     }
                 }
