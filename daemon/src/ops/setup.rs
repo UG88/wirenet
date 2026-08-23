@@ -219,6 +219,48 @@ impl SetupManager {
         // 4. Write /etc/wireguard/wg0.conf with Policy Routing (Table = off & AllowedIPs = 0.0.0.0/0)
         println!("[4/5] Configuring WireGuard Node Interface & Symmetric Return Rules...");
         let primary_ip = Self::get_primary_ip();
+
+        let mut custom_post_up = String::new();
+        let mut custom_post_down = String::new();
+        
+        let out = Command::new("docker").args(["ps", "--format", "{{.ID}}\t{{.Ports}}"]).output();
+        if let Ok(o) = out {
+            let s = String::from_utf8_lossy(&o.stdout);
+            for line in s.lines() {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() < 2 { continue; }
+                let cid = parts[0];
+                let ports_str = parts[1];
+                let ip_out = Command::new("docker")
+                    .args(["inspect", cid, "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"])
+                    .output();
+                if let Ok(io) = ip_out {
+                    let cip = String::from_utf8_lossy(&io.stdout).trim().to_string();
+                    if !cip.is_empty() {
+                        for port_part in ports_str.split(',') {
+                            if let Some(arrow) = port_part.find("->") {
+                                let host_p = port_part[..arrow].split(':').last().unwrap_or("0").trim();
+                                let cont_p = port_part[arrow + 2..].split('/').next().unwrap_or("0").trim();
+                                if let (Ok(hp), Ok(cp)) = (host_p.parse::<u16>(), cont_p.parse::<u16>()) {
+                                    if hp >= 1024 {
+                                        custom_post_up.push_str(&format!("PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
+                                        custom_post_up.push_str(&format!("PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
+                                        custom_post_up.push_str(&format!("PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
+                                        custom_post_up.push_str(&format!("PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
+                                        
+                                        custom_post_down.push_str(&format!("PostDown = iptables -t nat -D PREROUTING -i wg0 -p tcp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
+                                        custom_post_down.push_str(&format!("PostDown = iptables -t nat -D PREROUTING -i wg0 -p udp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
+                                        custom_post_down.push_str(&format!("PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
+                                        custom_post_down.push_str(&format!("PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let wg_conf = format!(
             "[Interface]\n\
             Address = 10.200.0.2/24\n\
@@ -233,10 +275,12 @@ impl SetupManager {
             PostUp = iptables -I INPUT 1 -i lo -j ACCEPT\n\
             PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT\n\
             PostUp = iptables -I FORWARD 1 -o wg0 -j ACCEPT\n\
+            PostUp = iptables -I DOCKER-USER 1 -j ACCEPT\n\
             PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
-            PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            {}\
             PostDown = ip rule del fwmark 0x1 table 100\n\
             PostDown = ip route del default via 10.200.0.1 dev wg0 table 100\n\
             PostDown = iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1\n\
@@ -245,13 +289,14 @@ impl SetupManager {
             PostDown = iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostDown = iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
-            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\n\
+            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            {}\n\
             [Peer]\n\
             PublicKey = {}\n\
             Endpoint = {}:51820\n\
             AllowedIPs = 0.0.0.0/0\n\
             PersistentKeepalive = 15\n",
-            priv_key, primary_ip, primary_ip, primary_ip, primary_ip, primary_ip, primary_ip, primary_ip, primary_ip, gateway_pub_key, gateway_ip
+            priv_key, primary_ip, primary_ip, primary_ip, primary_ip, custom_post_up, primary_ip, primary_ip, primary_ip, primary_ip, custom_post_down, gateway_pub_key, gateway_ip
         );
         fs::write("/etc/wireguard/wg0.conf", wg_conf)?;
 

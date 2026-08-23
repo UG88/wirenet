@@ -84,19 +84,30 @@ impl NodeAgent {
                         active_connections: 0,
                     }).await?;
 
-                    // Scan and sync ports
+                    // Scan and sync ports with kernel direct DNAT
                     if let Ok(ports) = self.docker_watcher.scan_active_ports().await {
                         for p in &ports {
-                            let _ = super::LocalForwarder::spawn_port_bridge(p.port, "127.0.0.1").await;
+                            if let Some(ref cip) = p.container_ip {
+                                let dest = format!("{}:{}", cip, p.container_port);
+                                let port_str = p.port.to_string();
+                                let _ = std::process::Command::new("iptables")
+                                    .args(["-t", "nat", "-I", "PREROUTING", "1", "-i", "wg0", "-p", "tcp", "--dport", &port_str, "-j", "DNAT", "--to-destination", &dest])
+                                    .output();
+                                let _ = std::process::Command::new("iptables")
+                                    .args(["-t", "nat", "-I", "PREROUTING", "1", "-i", "wg0", "-p", "udp", "--dport", &port_str, "-j", "DNAT", "--to-destination", &dest])
+                                    .output();
+                                let _ = std::process::Command::new("iptables")
+                                    .args(["-t", "nat", "-I", "PREROUTING", "1", "-d", "10.200.0.2", "-p", "tcp", "--dport", &port_str, "-j", "DNAT", "--to-destination", &dest])
+                                    .output();
+                                let _ = std::process::Command::new("iptables")
+                                    .args(["-t", "nat", "-I", "PREROUTING", "1", "-d", "10.200.0.2", "-p", "udp", "--dport", &port_str, "-j", "DNAT", "--to-destination", &dest])
+                                    .output();
+                            }
                         }
                         framed.send(Message::PortSync {
                             node_id: self.config.node_id.clone(),
                             ports,
                         }).await?;
-                    } else {
-                        for &p in &self.config.static_ports {
-                            let _ = super::LocalForwarder::spawn_port_bridge(p, "127.0.0.1").await;
-                        }
                     }
                 }
                 msg = framed.next() => {

@@ -39,16 +39,29 @@ impl DockerWatcher {
     fn scan_via_docker_cli(&self) -> Vec<PortMapping> {
         let mut mappings = Vec::new();
         let out = std::process::Command::new("docker")
-            .args(["ps", "--format", "{{.Ports}}\t{{.Names}}"])
+            .args(["ps", "--format", "{{.ID}}\t{{.Ports}}\t{{.Names}}"])
             .output();
 
         if let Ok(o) = out {
             let s = String::from_utf8_lossy(&o.stdout);
             for line in s.lines() {
                 let parts: Vec<&str> = line.split('\t').collect();
-                if parts.is_empty() { continue; }
-                let ports_str = parts[0];
-                let name = parts.get(1).map(|&n| n.to_string());
+                if parts.len() < 2 { continue; }
+                let container_id = parts[0];
+                let ports_str = parts[1];
+                let name = parts.get(2).map(|&n| n.to_string());
+
+                // Extract container internal IP address
+                let ip_out = std::process::Command::new("docker")
+                    .args(["inspect", container_id, "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"])
+                    .output();
+                let container_ip = match ip_out {
+                    Ok(io) => {
+                        let ip_str = String::from_utf8_lossy(&io.stdout).trim().to_string();
+                        if !ip_str.is_empty() { Some(ip_str) } else { None }
+                    }
+                    _ => None,
+                };
 
                 for port_part in ports_str.split(',') {
                     let trimmed = port_part.trim();
@@ -59,6 +72,10 @@ impl DockerWatcher {
                         let port_num = host_side.split(':').last()
                             .and_then(|p| p.parse::<u16>().ok())
                             .unwrap_or(0);
+
+                        let priv_port = container_side.split('/').next()
+                            .and_then(|p| p.parse::<u16>().ok())
+                            .unwrap_or(port_num);
 
                         let proto = if container_side.contains("/udp") {
                             ProtocolType::Udp
@@ -72,8 +89,8 @@ impl DockerWatcher {
                             mappings.push(PortMapping {
                                 port: port_num,
                                 protocol: proto,
-                                container_ip: None,
-                                container_port: port_num,
+                                container_ip: container_ip.clone(),
+                                container_port: priv_port,
                                 server_name: name.clone(),
                             });
                         }
