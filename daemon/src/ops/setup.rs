@@ -213,21 +213,41 @@ impl SetupManager {
 
         // 4. Write /etc/wireguard/wg0.conf with Policy Routing (Table = off & AllowedIPs = 0.0.0.0/0)
         println!("[4/5] Configuring WireGuard Node Interface & Symmetric Return Rules...");
-        let default_iface = Self::get_default_iface();
         let primary_ip = Self::get_primary_ip();
         let wg_conf = format!(
             "[Interface]\n\
             Address = 10.200.0.2/24\n\
             PrivateKey = {}\n\
             Table = off\n\n\
-            PostUp = sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1; sysctl -w net.ipv4.conf.wg0.route_localnet=1 >/dev/null 2>&1; sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null 2>&1; sysctl -w net.ipv4.conf.wg0.rp_filter=2 >/dev/null 2>&1; ip rule add fwmark 0x1 table 100 2>/dev/null || true; ip route add default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1; iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark; iptables -t mangle -A OUTPUT -j CONNMARK --restore-mark; iptables -I INPUT 1 -i wg0 -j ACCEPT; iptables -I INPUT 1 -i lo -j ACCEPT; iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -I FORWARD 1 -o wg0 -j ACCEPT; iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true; iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}; iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}; iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}; iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}; iptables -A INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP; iptables -A INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP\n\
-            PostDown = ip rule del fwmark 0x1 table 100 2>/dev/null || true; ip route del default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true; iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null || true; iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark 2>/dev/null || true; iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true; iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true; iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true; iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true; iptables -D INPUT -i {} -p tcp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true; iptables -D INPUT -i {} -p udp -m multiport --dports 25565:25700,30000:40000 -j DROP 2>/dev/null || true\n\n\
+            PostUp = ip rule add fwmark 0x1 table 100 2>/dev/null || true\n\
+            PostUp = ip route add default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true\n\
+            PostUp = iptables -t mangle -I PREROUTING 1 -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1\n\
+            PostUp = iptables -t mangle -I PREROUTING 1 -j CONNMARK --restore-mark\n\
+            PostUp = iptables -t mangle -I OUTPUT 1 -j CONNMARK --restore-mark\n\
+            PostUp = iptables -I INPUT 1 -i wg0 -j ACCEPT\n\
+            PostUp = iptables -I INPUT 1 -i lo -j ACCEPT\n\
+            PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT\n\
+            PostUp = iptables -I FORWARD 1 -o wg0 -j ACCEPT\n\
+            PostUp = iptables -I DOCKER-USER 1 -j ACCEPT 2>/dev/null || true\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\n\
+            PostDown = ip rule del fwmark 0x1 table 100 2>/dev/null || true\n\
+            PostDown = ip route del default via 10.200.0.1 dev wg0 table 100 2>/dev/null || true\n\
+            PostDown = iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null || true\n\
+            PostDown = iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark 2>/dev/null || true\n\
+            PostDown = iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark 2>/dev/null || true\n\
+            PostDown = iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true\n\
+            PostDown = iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true\n\
+            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true\n\
+            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {} 2>/dev/null || true\n\n\
             [Peer]\n\
             PublicKey = {}\n\
             Endpoint = {}:51820\n\
             AllowedIPs = 0.0.0.0/0\n\
             PersistentKeepalive = 15\n",
-            priv_key, primary_ip, primary_ip, primary_ip, primary_ip, default_iface, default_iface, primary_ip, primary_ip, primary_ip, primary_ip, default_iface, default_iface, gateway_pub_key, gateway_ip
+            priv_key, primary_ip, primary_ip, primary_ip, primary_ip, primary_ip, primary_ip, primary_ip, primary_ip, gateway_pub_key, gateway_ip
         );
         fs::write("/etc/wireguard/wg0.conf", wg_conf)?;
 
@@ -248,9 +268,40 @@ impl SetupManager {
         println!(" Node Public Key : {}", pub_key);
         println!("==========================================================");
         println!(" Crucial Final Step: On your Gateway VPS, run:");
-        println!("   wg set wg0 peer \"{}\" allowed-ips 10.200.0.2/32", pub_key);
+        println!("   wirenet peer add \"{}\"", pub_key);
         println!("==========================================================");
 
+        Ok(())
+    }
+
+    /// Add and permanently persist a Node peer on the Gateway
+    pub fn add_node_peer(node_pub_key: &str, node_virtual_ip: &str) -> Result<()> {
+        let trimmed_key = node_pub_key.trim();
+        println!("==========================================================");
+        println!(" 🔑 WireNet Gateway Peer Authorizer");
+        println!("==========================================================");
+        println!("[+] Registering Peer Public Key: {}", trimmed_key);
+        println!("[+] Assigned Virtual IP        : {}", node_virtual_ip);
+
+        // 1. Add to active runtime WireGuard interface
+        let _ = Command::new("wg").args(["set", "wg0", "peer", trimmed_key, "allowed-ips", &format!("{}/32", node_virtual_ip)]).output();
+
+        // 2. Persist to /etc/wireguard/wg0.conf if not already present
+        let mut conf_content = fs::read_to_string("/etc/wireguard/wg0.conf").unwrap_or_default();
+        if !conf_content.contains(trimmed_key) {
+            conf_content.push_str(&format!(
+                "\n[Peer]\nPublicKey = {}\nAllowedIPs = {}/32\n",
+                trimmed_key, node_virtual_ip
+            ));
+            fs::write("/etc/wireguard/wg0.conf", conf_content)?;
+            println!("  [✓] Peer permanently appended to /etc/wireguard/wg0.conf");
+        } else {
+            println!("  [✓] Peer was already registered in /etc/wireguard/wg0.conf");
+        }
+
+        println!("==========================================================");
+        println!(" [✓] Node Peer Authorized & Persisted Successfully!");
+        println!("==========================================================");
         Ok(())
     }
 

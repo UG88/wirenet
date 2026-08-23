@@ -60,8 +60,25 @@ enum Commands {
     Update,
     /// Apply In-Place Real IP Routing Update (Preserves Existing Keys & Peers)
     Apply,
+    /// Authorize and Persist a Node Peer (Gateway Hub)
+    Peer {
+        #[command(subcommand)]
+        sub: PeerCommands,
+    },
     /// 100% Deep Cleaner & Complete Uninstaller
     Uninstall,
+}
+
+#[derive(Subcommand)]
+enum PeerCommands {
+    /// Add and permanently persist a Node peer public key on the Gateway
+    Add {
+        /// Node Public Key
+        key: String,
+        /// Node Virtual IP
+        #[arg(default_value = "10.200.0.2")]
+        ip: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -230,6 +247,11 @@ async fn main() -> Result<()> {
         Some(Commands::Apply) => {
             SetupManager::apply_real_ip_routing()?;
         }
+        Some(Commands::Peer { sub }) => match sub {
+            PeerCommands::Add { key, ip } => {
+                SetupManager::add_node_peer(&key, &ip)?;
+            }
+        },
         Some(Commands::Uninstall) => {
             UninstallManager::deep_uninstall()?;
         }
