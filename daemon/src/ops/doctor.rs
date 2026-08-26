@@ -96,15 +96,30 @@ impl DoctorManager {
 
         // 5. Firewall Integrity & Localnet Fix
         println!("[5/6] Verifying Firewall & Policy Routing Rules...");
+        let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
+        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.forwarding=1"]).output();
         let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.rp_filter=0"]).output();
         let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.rp_filter=0"]).output();
         let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.wg0.rp_filter=0"]).output();
+        let _ = Command::new("iptables").args(["-P", "FORWARD", "ACCEPT"]).output();
         let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-j", "ACCEPT"]).output();
         let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-i", "wg0", "-j", "ACCEPT"]).output();
         let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-o", "wg0", "-j", "ACCEPT"]).output();
         let _ = Command::new("iptables").args(["-I", "DOCKER-USER", "1", "-j", "ACCEPT"]).output();
         let _ = Command::new("iptables").args(["-I", "INPUT", "1", "-i", "wg0", "-j", "ACCEPT"]).output();
         let _ = Command::new("iptables").args(["-I", "INPUT", "1", "-i", "lo", "-j", "ACCEPT"]).output();
+        
+        if !is_gateway {
+            let route_check = Command::new("ip").args(["route", "get", "1.1.1.1", "mark", "0x1"]).output();
+            if let Ok(ref rc) = route_check {
+                let out = String::from_utf8_lossy(&rc.stdout);
+                if out.contains("dev wg0") {
+                    println!("  [✓] Policy Routing (mark 0x1 -> table 100 dev wg0): VERIFIED");
+                } else {
+                    println!("  [!] Policy Routing: {}", out.trim());
+                }
+            }
+        }
         println!("  [✓] WireGuard Forwarding & Ingress Chains: VERIFIED");
 
         // 6. Game Port Testing (TCP Socket probe)

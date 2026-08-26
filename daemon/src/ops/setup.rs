@@ -297,12 +297,14 @@ impl SetupManager {
             Address = 10.200.0.2/24\n\
             PrivateKey = {}\n\
             Table = off\n\n\
+            PostUp = sysctl -w net.ipv4.ip_forward=1\n\
+            PostUp = sysctl -w net.ipv4.conf.all.forwarding=1\n\
             PostUp = sysctl -w net.ipv4.conf.all.rp_filter=0\n\
             PostUp = sysctl -w net.ipv4.conf.default.rp_filter=0\n\
             PostUp = sysctl -w net.ipv4.conf.wg0.rp_filter=0\n\
             PostUp = ip rule add fwmark 0x1 table 100 pref 100\n\
             PostUp = ip route add 10.200.0.0/24 dev wg0 table 100\n\
-            PostUp = ip route add default via 10.200.0.1 dev wg0 table 100\n\
+            PostUp = ip route add default dev wg0 table 100\n\
             PostUp = iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j MARK --set-mark 0x1\n\
             PostUp = iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --save-mark\n\
             PostUp = iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark\n\
