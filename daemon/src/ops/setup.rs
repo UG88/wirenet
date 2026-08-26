@@ -249,6 +249,7 @@ impl SetupManager {
 
         // 4. Write /etc/wireguard/wg0.conf with Policy Routing (Table = off & AllowedIPs = 0.0.0.0/0)
         println!("[4/5] Configuring WireGuard Node Interface & Symmetric Return Rules...");
+        let primary_ip = Self::get_primary_ip();
 
         let mut custom_post_up = String::new();
         let mut custom_post_down = String::new();
@@ -296,13 +297,10 @@ impl SetupManager {
             Address = 10.200.0.2/24\n\
             PrivateKey = {}\n\
             Table = off\n\n\
-            PostUp = sysctl -w net.ipv4.conf.all.route_localnet=1\n\
-            PostUp = sysctl -w net.ipv4.conf.default.route_localnet=1\n\
-            PostUp = sysctl -w net.ipv4.conf.wg0.route_localnet=1\n\
             PostUp = sysctl -w net.ipv4.conf.all.rp_filter=0\n\
             PostUp = sysctl -w net.ipv4.conf.default.rp_filter=0\n\
             PostUp = sysctl -w net.ipv4.conf.wg0.rp_filter=0\n\
-            PostUp = ip rule add fwmark 0x1 table 100\n\
+            PostUp = ip rule add fwmark 0x1 table 100 pref 100\n\
             PostUp = ip route add 10.200.0.0/24 dev wg0 table 100\n\
             PostUp = ip route add default via 10.200.0.1 dev wg0 table 100\n\
             PostUp = iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j MARK --set-mark 0x1\n\
@@ -316,28 +314,28 @@ impl SetupManager {
             PostUp = iptables -I DOCKER-USER 1 -i wg0 -j ACCEPT\n\
             PostUp = iptables -I DOCKER-USER 1 -o wg0 -j ACCEPT\n\
             PostUp = iptables -I DOCKER-USER 1 -j ACCEPT\n\
-            PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1\n\
-            PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1\n\
-            PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1\n\
-            PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             {}\
-            PostDown = ip rule del fwmark 0x1 table 100\n\
+            PostDown = ip rule del fwmark 0x1 table 100 pref 100\n\
             PostDown = ip route del default via 10.200.0.1 dev wg0 table 100\n\
             PostDown = iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j MARK --set-mark 0x1\n\
             PostDown = iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --save-mark\n\
             PostDown = iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark\n\
             PostDown = iptables -t mangle -D OUTPUT -j CONNMARK --restore-mark\n\
-            PostDown = iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1\n\
-            PostDown = iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1\n\
-            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1\n\
-            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination 127.0.0.1\n\
+            PostDown = iptables -t nat -D PREROUTING -i wg0 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostDown = iptables -t nat -D PREROUTING -i wg0 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
+            PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             {}\n\
             [Peer]\n\
             PublicKey = {}\n\
             Endpoint = {}:51820\n\
             AllowedIPs = 0.0.0.0/0\n\
             PersistentKeepalive = 15\n",
-            priv_key, custom_post_up, custom_post_down, gateway_pub_key, gateway_ip
+            priv_key, primary_ip, primary_ip, primary_ip, primary_ip, custom_post_up, primary_ip, primary_ip, primary_ip, primary_ip, custom_post_down, gateway_pub_key, gateway_ip
         );
         fs::write("/etc/wireguard/wg0.conf", wg_conf)?;
 
