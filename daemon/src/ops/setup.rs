@@ -302,9 +302,8 @@ impl SetupManager {
             PostUp = sysctl -w net.ipv4.conf.all.rp_filter=0\n\
             PostUp = sysctl -w net.ipv4.conf.default.rp_filter=0\n\
             PostUp = sysctl -w net.ipv4.conf.wg0.rp_filter=0\n\
-            PostUp = ip rule add fwmark 0x1 table 100 pref 100\n\
-            PostUp = ip route add 10.200.0.0/24 dev wg0 table 100\n\
-            PostUp = ip route add default dev wg0 table 100\n\
+            PostUp = /bin/sh -c 'ip rule del fwmark 0x1 2>/dev/null || true; ip rule add fwmark 0x1 table 100 pref 100'\n\
+            PostUp = /bin/sh -c 'ip route flush table 100 2>/dev/null || true; ip route add 10.200.0.0/24 dev wg0 table 100; ip route add default dev wg0 table 100'\n\
             PostUp = iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j MARK --set-mark 0x1\n\
             PostUp = iptables -t mangle -A PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --save-mark\n\
             PostUp = iptables -t mangle -A PREROUTING -j CONNMARK --restore-mark\n\
@@ -321,8 +320,7 @@ impl SetupManager {
             PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp -m multiport --dports 25565:25700,30000:40000 -j DNAT --to-destination {}\n\
             {}\
-            PostDown = ip rule del fwmark 0x1 table 100 pref 100\n\
-            PostDown = ip route del default via 10.200.0.1 dev wg0 table 100\n\
+            PostDown = /bin/sh -c 'ip rule del fwmark 0x1 2>/dev/null || true; ip route flush table 100 2>/dev/null || true'\n\
             PostDown = iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j MARK --set-mark 0x1\n\
             PostDown = iptables -t mangle -D PREROUTING -i wg0 -m conntrack --ctstate NEW -j CONNMARK --save-mark\n\
             PostDown = iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark\n\
@@ -345,6 +343,8 @@ impl SetupManager {
         println!("[5/5] Activating WireGuard wg0 interface...");
         let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
         let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
+        let _ = Command::new("ip").args(["rule", "del", "fwmark", "0x1"]).output();
+        let _ = Command::new("ip").args(["route", "flush", "table", "100"]).output();
         let up = Command::new("wg-quick").args(["up", "wg0"]).output();
         if let Ok(ref u) = up {
             if !u.status.success() {
