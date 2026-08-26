@@ -60,17 +60,48 @@ impl SetupManager {
             ListenPort = 51820\n\
             PrivateKey = {}\n\
             SaveConfig = false\n\n\
-            PostUp = iptables -I FORWARD 1 -j ACCEPT; iptables -I INPUT 1 -i wg0 -j ACCEPT; iptables -t nat -I PREROUTING 1 -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2; iptables -t nat -I PREROUTING 1 -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2; iptables -t nat -A POSTROUTING -o {} -j MASQUERADE\n\
-            PostDown = iptables -D FORWARD -j ACCEPT 2>/dev/null; iptables -D INPUT -i wg0 -j ACCEPT 2>/dev/null; iptables -t nat -D PREROUTING -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D PREROUTING -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2 2>/dev/null; iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null\n\n\
+            PostUp = sysctl -w net.ipv4.ip_forward=1\n\
+            PostUp = sysctl -w net.ipv4.conf.all.forwarding=1\n\
+            PostUp = sysctl -w net.ipv4.conf.all.rp_filter=0\n\
+            PostUp = sysctl -w net.ipv4.conf.default.rp_filter=0\n\
+            PostUp = sysctl -w net.ipv4.conf.wg0.rp_filter=0\n\
+            PostUp = iptables -P FORWARD ACCEPT\n\
+            PostUp = iptables -I FORWARD 1 -j ACCEPT\n\
+            PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT\n\
+            PostUp = iptables -I FORWARD 1 -o wg0 -j ACCEPT\n\
+            PostUp = iptables -I INPUT 1 -i wg0 -j ACCEPT\n\
+            PostUp = iptables -I INPUT 1 -p udp --dport 51820 -j ACCEPT\n\
+            PostUp = iptables -I INPUT 1 -p tcp -m multiport --dports {}:{} -j ACCEPT\n\
+            PostUp = iptables -I INPUT 1 -p udp -m multiport --dports {}:{} -j ACCEPT\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2\n\
+            PostUp = iptables -t nat -I PREROUTING 1 -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2\n\
+            PostUp = iptables -t nat -I POSTROUTING 1 -o {} -j MASQUERADE\n\n\
+            PostDown = iptables -D FORWARD -j ACCEPT\n\
+            PostDown = iptables -D INPUT -i wg0 -j ACCEPT\n\
+            PostDown = iptables -t nat -D PREROUTING -p tcp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2\n\
+            PostDown = iptables -t nat -D PREROUTING -p udp -m multiport --dports {}:{} -j DNAT --to-destination 10.200.0.2\n\
+            PostDown = iptables -t nat -D POSTROUTING -o {} -j MASQUERADE\n\n\
             {}",
-            priv_key, ports_start, ports_end, ports_start, ports_end, default_iface, ports_start, ports_end, ports_start, ports_end, default_iface, existing_peers
+            priv_key, ports_start, ports_end, ports_start, ports_end, ports_start, ports_end, ports_start, ports_end, default_iface, ports_start, ports_end, ports_start, ports_end, default_iface, existing_peers
         );
         fs::write("/etc/wireguard/wg0.conf", wg_conf)?;
 
         // 5. Activate Interface & Systemd Service
         println!("[5/5] Activating WireGuard wg0 interface...");
+        let _ = Command::new("ufw").args(["allow", "51820/udp"]).output();
+        let _ = Command::new("ufw").args(["allow", &format!("{}:{}/tcp", ports_start, ports_end)]).output();
+        let _ = Command::new("ufw").args(["allow", &format!("{}:{}/udp", ports_start, ports_end)]).output();
+        let _ = Command::new("ufw").args(["allow", "9000"]).output();
+        let _ = Command::new("iptables").args(["-P", "FORWARD", "ACCEPT"]).output();
+        let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
+        let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
+        let up = Command::new("wg-quick").args(["up", "wg0"]).output();
+        if let Ok(ref u) = up {
+            if !u.status.success() {
+                println!("  [!] Notice: {}", String::from_utf8_lossy(&u.stderr).trim());
+            }
+        }
         let _ = Command::new("systemctl").args(["enable", "--now", "wg-quick@wg0"]).output();
-        let _ = Command::new("systemctl").args(["restart", "wg-quick@wg0"]).output();
 
         // Create wirenet-gateway.service
         Self::install_gateway_systemd(ports_start, ports_end)?;
