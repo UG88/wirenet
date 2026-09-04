@@ -73,10 +73,14 @@ impl GatewayServer {
 
     async fn run_control_listener(&self) -> Result<()> {
         let addr = format!("{}:{}", self.config.bind_ip, self.config.control_port);
-        let listener = TcpListener::bind(&addr).await
+        let listener = TcpListener::bind(&addr)
+            .await
             .with_context(|| format!("Failed to bind control plane listener on {}", addr))?;
 
-        info!("[Control Plane] Listening for Node Agent connections on {}", addr);
+        info!(
+            "[Control Plane] Listening for Node Agent connections on {}",
+            addr
+        );
 
         loop {
             let (socket, peer_addr) = listener.accept().await?;
@@ -85,7 +89,10 @@ impl GatewayServer {
 
             tokio::spawn(async move {
                 let mut framed = Framed::new(socket, WireNetCodec::new());
-                info!("[Control Plane] Incoming connection from Node Agent: {}", peer_addr);
+                info!(
+                    "[Control Plane] Incoming connection from Node Agent: {}",
+                    peer_addr
+                );
 
                 while let Some(msg_res) = framed.next().await {
                     match msg_res {
@@ -97,31 +104,49 @@ impl GatewayServer {
                                 auth_token: token,
                             } => {
                                 if token != auth_token {
-                                    warn!("[Control Plane] Node {} authentication failed!", node_id);
-                                    let _ = framed.send(Message::RegisterAck {
-                                        success: false,
-                                        gateway_version: env!("CARGO_PKG_VERSION").to_string(),
-                                        assigned_ports: vec![],
-                                        error: Some("Invalid authentication token".to_string()),
-                                    }).await;
+                                    warn!(
+                                        "[Control Plane] Node {} authentication failed!",
+                                        node_id
+                                    );
+                                    let _ = framed
+                                        .send(Message::RegisterAck {
+                                            success: false,
+                                            gateway_version: env!("CARGO_PKG_VERSION").to_string(),
+                                            assigned_ports: vec![],
+                                            error: Some("Invalid authentication token".to_string()),
+                                        })
+                                        .await;
                                     break;
                                 }
 
-                                info!("[Control Plane] Node Registered: {} ({}) IP: {}", node_name, node_id, virtual_ip);
+                                info!(
+                                    "[Control Plane] Node Registered: {} ({}) IP: {}",
+                                    node_name, node_id, virtual_ip
+                                );
                                 router.register_node(node_id.clone(), node_name, virtual_ip);
 
-                                let _ = framed.send(Message::RegisterAck {
-                                    success: true,
-                                    gateway_version: env!("CARGO_PKG_VERSION").to_string(),
-                                    assigned_ports: vec![],
-                                    error: None,
-                                }).await;
+                                let _ = framed
+                                    .send(Message::RegisterAck {
+                                        success: true,
+                                        gateway_version: env!("CARGO_PKG_VERSION").to_string(),
+                                        assigned_ports: vec![],
+                                        error: None,
+                                    })
+                                    .await;
                             }
                             Message::PortSync { node_id, ports } => {
-                                info!("[Control Plane] Node {} synced {} active game ports", node_id, ports.len());
+                                info!(
+                                    "[Control Plane] Node {} synced {} active game ports",
+                                    node_id,
+                                    ports.len()
+                                );
                                 router.sync_node_ports(&node_id, ports);
                             }
-                            Message::Heartbeat { node_id, timestamp_ms, .. } => {
+                            Message::Heartbeat {
+                                node_id,
+                                timestamp_ms,
+                                ..
+                            } => {
                                 router.update_heartbeat(&node_id);
                                 let _ = framed.send(Message::HeartbeatAck { timestamp_ms }).await;
                             }
@@ -161,7 +186,9 @@ impl GatewayServer {
             }
 
             // 2. Find target backend node virtual IP (default 10.200.0.2)
-            let target_node_ip = self.router.get_target_node_ip(port)
+            let target_node_ip = self
+                .router
+                .get_target_node_ip(port)
                 .unwrap_or_else(|| "10.200.0.2".to_string());
 
             let shield = self.shield.clone();
@@ -170,7 +197,8 @@ impl GatewayServer {
                 let target_addr = format!("{}:{}", target_node_ip, port);
                 if let Ok(mut backend_socket) = TcpStream::connect(&target_addr).await {
                     // Bidirectional zero-copy stream piping
-                    let _ = tokio::io::copy_bidirectional(&mut client_socket, &mut backend_socket).await;
+                    let _ = tokio::io::copy_bidirectional(&mut client_socket, &mut backend_socket)
+                        .await;
                 }
                 shield.connection_closed(client_addr.ip());
             });

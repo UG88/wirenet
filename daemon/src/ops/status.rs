@@ -29,9 +29,15 @@ impl StatusManager {
 
         // 3. Service Status
         println!("\n--- [ Background Daemons ] ---");
-        let services = ["wirenet-gateway.service", "wirenet-node.service", "wg-quick@wg0.service"];
+        let services = [
+            "wirenet-gateway.service",
+            "wirenet-node.service",
+            "wg-quick@wg0.service",
+        ];
         for s in services {
-            let active = Command::new("systemctl").args(["is-active", s]).output()
+            let active = Command::new("systemctl")
+                .args(["is-active", s])
+                .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                 .unwrap_or_else(|_| "inactive".to_string());
             println!(" {:<24}: {}", s, active.to_uppercase());
@@ -42,7 +48,9 @@ impl StatusManager {
     }
 
     fn get_public_ip() -> String {
-        let out = Command::new("ip").args(["route", "get", "1.1.1.1"]).output();
+        let out = Command::new("ip")
+            .args(["route", "get", "1.1.1.1"])
+            .output();
         if let Ok(o) = out {
             let s = String::from_utf8_lossy(&o.stdout);
             let parts: Vec<&str> = s.split_whitespace().collect();

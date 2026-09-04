@@ -72,7 +72,8 @@ impl AntiDDoSShield {
         });
 
         let elapsed = now.duration_since(entry.last_update).as_secs_f64();
-        entry.tokens = (entry.tokens + elapsed * (self.rate_limit as f64)).min(self.burst_limit as f64);
+        entry.tokens =
+            (entry.tokens + elapsed * (self.rate_limit as f64)).min(self.burst_limit as f64);
         entry.last_update = now;
 
         if entry.tokens >= 1.0 {
@@ -101,7 +102,8 @@ impl AntiDDoSShield {
     pub async fn cleanup_stale_ips(&self) {
         let now = Instant::now();
         self.ip_table.retain(|_, state| {
-            now.duration_since(state.last_update) < Duration::from_secs(60) || state.active_count > 0
+            now.duration_since(state.last_update) < Duration::from_secs(60)
+                || state.active_count > 0
         });
     }
 

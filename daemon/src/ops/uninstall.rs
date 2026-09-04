@@ -10,13 +10,33 @@ impl UninstallManager {
         println!("==========================================================");
 
         println!("[1/5] Stopping and disabling background services...");
-        let _ = Command::new("systemctl").args(["stop", "wirenet-gateway.service", "wirenet-node.service", "wirenet-watcher.service"]).output();
-        let _ = Command::new("systemctl").args(["disable", "wirenet-gateway.service", "wirenet-node.service", "wirenet-watcher.service"]).output();
+        let _ = Command::new("systemctl")
+            .args([
+                "stop",
+                "wirenet-gateway.service",
+                "wirenet-node.service",
+                "wirenet-watcher.service",
+            ])
+            .output();
+        let _ = Command::new("systemctl")
+            .args([
+                "disable",
+                "wirenet-gateway.service",
+                "wirenet-node.service",
+                "wirenet-watcher.service",
+            ])
+            .output();
 
         println!("[2/5] Tearing down WireGuard interfaces...");
-        let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
-        let _ = Command::new("systemctl").args(["disable", "wg-quick@wg0"]).output();
-        let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
+        let _ = Command::new("systemctl")
+            .args(["stop", "wg-quick@wg0"])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["disable", "wg-quick@wg0"])
+            .output();
+        let _ = Command::new("ip")
+            .args(["link", "del", "dev", "wg0"])
+            .output();
 
         println!("[3/5] Removing systemd service units...");
         let files = [

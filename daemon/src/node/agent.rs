@@ -35,7 +35,10 @@ impl NodeAgent {
                     info!("[Node Agent] Connection closed cleanly. Reconnecting in 3s...");
                 }
                 Err(e) => {
-                    warn!("[Node Agent] Gateway connection lost ({:?}). Reconnecting in 5s...", e);
+                    warn!(
+                        "[Node Agent] Gateway connection lost ({:?}). Reconnecting in 5s...",
+                        e
+                    );
                 }
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -43,9 +46,18 @@ impl NodeAgent {
     }
 
     async fn connect_and_sync(&self) -> Result<()> {
-        info!("[Node Agent] Connecting to Gateway at {}...", self.config.gateway_endpoint);
-        let stream = TcpStream::connect(&self.config.gateway_endpoint).await
-            .with_context(|| format!("Could not connect to Gateway at {}", self.config.gateway_endpoint))?;
+        info!(
+            "[Node Agent] Connecting to Gateway at {}...",
+            self.config.gateway_endpoint
+        );
+        let stream = TcpStream::connect(&self.config.gateway_endpoint)
+            .await
+            .with_context(|| {
+                format!(
+                    "Could not connect to Gateway at {}",
+                    self.config.gateway_endpoint
+                )
+            })?;
 
         let mut framed = Framed::new(stream, WireNetCodec::new());
 
@@ -60,11 +72,23 @@ impl NodeAgent {
         framed.send(register_msg).await?;
 
         // 2. Wait for RegisterAck
-        if let Some(Ok(Message::RegisterAck { success, gateway_version, error, .. })) = framed.next().await {
+        if let Some(Ok(Message::RegisterAck {
+            success,
+            gateway_version,
+            error,
+            ..
+        })) = framed.next().await
+        {
             if !success {
-                return Err(anyhow::anyhow!("Gateway rejected registration: {:?}", error));
+                return Err(anyhow::anyhow!(
+                    "Gateway rejected registration: {:?}",
+                    error
+                ));
             }
-            info!("[Node Agent] [✓] Successfully registered with Gateway v{}", gateway_version);
+            info!(
+                "[Node Agent] [✓] Successfully registered with Gateway v{}",
+                gateway_version
+            );
         }
 
         // 3. Heartbeat & Port Discovery Sync Loop

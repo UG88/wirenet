@@ -1,4 +1,6 @@
 mod config;
+pub mod controller;
+pub mod dashboard_server;
 mod gateway;
 mod node;
 mod ops;
@@ -10,7 +12,9 @@ use clap::{Parser, Subcommand};
 use config::{GatewayConfig, NodeConfig};
 use gateway::GatewayServer;
 use node::NodeAgent;
-use ops::{DoctorManager, SetupManager, ShieldManager, StatusManager, UninstallManager, UpdateManager};
+use ops::{
+    DoctorManager, SetupManager, ShieldManager, StatusManager, UninstallManager, UpdateManager,
+};
 use std::sync::Arc;
 use tui::TuiDashboard;
 
@@ -67,6 +71,169 @@ enum Commands {
     },
     /// 100% Deep Cleaner & Complete Uninstaller
     Uninstall,
+    /// Optional Axum Control-Plane Web UI
+    Dashboard {
+        #[command(subcommand)]
+        sub: DashboardCommands,
+    },
+    /// Local SQLite Desired-State Controller Store
+    Controller {
+        #[command(subcommand)]
+        sub: ControllerCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum DashboardCommands {
+    /// Run the authenticated Axum dashboard HTTP server
+    Serve {
+        /// SQLite desired-state database file path
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        /// Path to bearer token file
+        #[arg(long, default_value = "/etc/wirenet/dashboard.token")]
+        token_file: std::path::PathBuf,
+
+        /// Listening address (loopback only unless --allow-remote)
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        listen: std::net::SocketAddr,
+
+        /// Permit binding to non-loopback address
+        #[arg(long, default_value_t = false)]
+        allow_remote: bool,
+    },
+    /// Generate a cryptographically secure 256-bit dashboard token
+    Token {
+        /// Path to save token file (0600 on unix)
+        #[arg(long, default_value = "/etc/wirenet/dashboard.token")]
+        token_file: std::path::PathBuf,
+    },
+    /// Install optional systemd service unit (wirenet-dashboard.service)
+    Install {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long, default_value = "/etc/wirenet/dashboard.token")]
+        token_file: std::path::PathBuf,
+
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        listen: std::net::SocketAddr,
+
+        #[arg(long, default_value_t = false)]
+        allow_remote: bool,
+    },
+    /// Enable and start wirenet-dashboard.service
+    Enable,
+    /// Disable and stop wirenet-dashboard.service
+    Disable,
+    /// Check wirenet-dashboard.service status
+    ServiceStatus,
+}
+
+#[derive(Subcommand)]
+enum ControllerCommands {
+    /// Show current desired state (nodes, servers, mappings, bans)
+    Show {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Add an active node to desired state
+    AddNode {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long)]
+        id: String,
+
+        #[arg(long)]
+        name: String,
+
+        #[arg(long)]
+        tunnel_ip: String,
+
+        #[arg(long)]
+        public_key: String,
+    },
+    /// Add a server to desired state
+    AddServer {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long)]
+        id: String,
+
+        #[arg(long)]
+        node_id: String,
+
+        #[arg(long)]
+        customer_id: String,
+
+        #[arg(long)]
+        pterodactyl_id: String,
+    },
+    /// Reserve an ingress mapping in desired state (IP:port:protocol)
+    AddMapping {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long)]
+        id: String,
+
+        #[arg(long)]
+        server_id: String,
+
+        #[arg(long)]
+        public_ip: String,
+
+        #[arg(long)]
+        public_port: u16,
+
+        #[arg(long)]
+        backend_port: u16,
+
+        #[arg(long)]
+        protocol: String,
+    },
+    /// Toggle mapping enabled state
+    ToggleMapping {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long)]
+        id: String,
+
+        #[arg(long)]
+        enabled: bool,
+    },
+    /// Add an IP ban to desired state
+    AddBan {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long)]
+        ip: String,
+
+        #[arg(long)]
+        reason: String,
+
+        #[arg(long)]
+        mapping_id: Option<String>,
+
+        #[arg(long)]
+        expires_in_secs: Option<u64>,
+    },
+    /// Remove an IP ban by ID from desired state
+    RemoveBan {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long)]
+        id: i64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -177,10 +344,16 @@ async fn main() -> Result<()> {
             }
         }
         Some(Commands::Setup { sub }) => match sub {
-            SetupCommands::Gateway { start_port, end_port } => {
+            SetupCommands::Gateway {
+                start_port,
+                end_port,
+            } => {
                 SetupManager::setup_gateway(start_port, end_port)?;
             }
-            SetupCommands::Node { gateway, gateway_key } => {
+            SetupCommands::Node {
+                gateway,
+                gateway_key,
+            } => {
                 SetupManager::setup_node(&gateway, &gateway_key)?;
             }
         },
@@ -255,6 +428,201 @@ async fn main() -> Result<()> {
         Some(Commands::Uninstall) => {
             UninstallManager::deep_uninstall()?;
         }
+        Some(Commands::Dashboard { sub }) => match sub {
+            DashboardCommands::Serve {
+                database,
+                token_file,
+                listen,
+                allow_remote,
+            } => {
+                dashboard_server::validate_listen(listen, allow_remote)?;
+                let token = dashboard_server::load_token(&token_file)?;
+                let store = controller::Store::open(&database)?;
+                println!("Starting WireNet dashboard on http://{listen}");
+                println!("Backend database: {}", database.display());
+                dashboard_server::serve(store, listen, token).await?;
+            }
+            DashboardCommands::Token { token_file } => {
+                let token = dashboard_server::create_token(&token_file)?;
+                println!("Generated dashboard token at: {}", token_file.display());
+                println!("Token: {token}");
+            }
+            DashboardCommands::Install {
+                database,
+                token_file,
+                listen,
+                allow_remote,
+            } => {
+                dashboard_server::install_service(&database, &token_file, listen, allow_remote)?;
+                println!("Installed /etc/systemd/system/wirenet-dashboard.service");
+            }
+            DashboardCommands::Enable => {
+                dashboard_server::set_enabled(true)?;
+                println!("Enabled and started wirenet-dashboard.service");
+            }
+            DashboardCommands::Disable => {
+                dashboard_server::set_enabled(false)?;
+                println!("Disabled and stopped wirenet-dashboard.service");
+            }
+            DashboardCommands::ServiceStatus => {
+                let status = dashboard_server::service_status()?;
+                println!("wirenet-dashboard.service is: {status}");
+            }
+        },
+        Some(Commands::Controller { sub }) => match sub {
+            ControllerCommands::Show { database, json } => {
+                let store = controller::Store::open(&database)?;
+                let state = store.state()?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&state)?);
+                } else {
+                    println!("=== WireNet Desired State ({}) ===", database.display());
+                    println!("Nodes ({}):", state.nodes.len());
+                    for n in &state.nodes {
+                        let key_snippet = if n.public_key.len() > 12 {
+                            &n.public_key[..12]
+                        } else {
+                            &n.public_key
+                        };
+                        println!(
+                            "  - [{}] {} (tunnel: {}, pubkey: {}...)",
+                            n.id, n.name, n.tunnel_ip, key_snippet
+                        );
+                    }
+                    println!("Servers ({}):", state.servers.len());
+                    for s in &state.servers {
+                        println!(
+                            "  - [{}] node: {}, customer: {}, ptero: {}, state: {}",
+                            s.id, s.node_id, s.customer_id, s.pterodactyl_id, s.state
+                        );
+                    }
+                    println!("Mappings ({}):", state.mappings.len());
+                    for m in &state.mappings {
+                        let status = if m.enabled { "enabled" } else { "disabled" };
+                        println!(
+                            "  - [{}] {}:{}/{} -> node {} port {} ({})",
+                            m.id,
+                            m.public_ip,
+                            m.public_port,
+                            m.protocol,
+                            m.node_id,
+                            m.backend_port,
+                            status
+                        );
+                    }
+                    println!("Bans ({}):", state.bans.len());
+                    for b in &state.bans {
+                        println!(
+                            "  - [id={}] ip: {}, reason: {}, mapping: {:?}",
+                            b.id, b.ip, b.reason, b.mapping_id
+                        );
+                    }
+                }
+            }
+            ControllerCommands::AddNode {
+                database,
+                id,
+                name,
+                tunnel_ip,
+                public_key,
+            } => {
+                let store = controller::Store::open(&database)?;
+                store.add_node(
+                    controller::NodeInput {
+                        id,
+                        name,
+                        tunnel_ip,
+                        public_key,
+                    },
+                    "cli",
+                )?;
+                println!("Node added to desired state.");
+            }
+            ControllerCommands::AddServer {
+                database,
+                id,
+                node_id,
+                customer_id,
+                pterodactyl_id,
+            } => {
+                let store = controller::Store::open(&database)?;
+                store.add_server(
+                    controller::ServerInput {
+                        id,
+                        node_id,
+                        customer_id,
+                        pterodactyl_id,
+                    },
+                    "cli",
+                )?;
+                println!("Server registered in desired state.");
+            }
+            ControllerCommands::AddMapping {
+                database,
+                id,
+                server_id,
+                public_ip,
+                public_port,
+                backend_port,
+                protocol,
+            } => {
+                let store = controller::Store::open(&database)?;
+                store.add_mapping(
+                    controller::MappingInput {
+                        id,
+                        server_id,
+                        public_ip,
+                        public_port,
+                        backend_port,
+                        protocol,
+                    },
+                    "cli",
+                )?;
+                println!(
+                    "Mapping reserved in desired state. (Apply remains explicit via network reconciler)"
+                );
+            }
+            ControllerCommands::ToggleMapping {
+                database,
+                id,
+                enabled,
+            } => {
+                let store = controller::Store::open(&database)?;
+                store.toggle_mapping(&id, enabled, "cli")?;
+                println!("Mapping {id} enabled state set to: {enabled}");
+            }
+            ControllerCommands::AddBan {
+                database,
+                ip,
+                reason,
+                mapping_id,
+                expires_in_secs,
+            } => {
+                let store = controller::Store::open(&database)?;
+                let expires_at = expires_in_secs.map(|s| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64
+                        + s as i64
+                });
+                store.add_ban(
+                    controller::BanInput {
+                        ip,
+                        reason,
+                        mapping_id,
+                        expires_at,
+                    },
+                    "cli",
+                )?;
+                println!("Ban recorded in desired state.");
+            }
+            ControllerCommands::RemoveBan { database, id } => {
+                let store = controller::Store::open(&database)?;
+                store.remove_ban(id, "cli")?;
+                println!("Ban {id} removed.");
+            }
+        },
     }
 
     Ok(())

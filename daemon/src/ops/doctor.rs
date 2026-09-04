@@ -13,12 +13,24 @@ impl DoctorManager {
 
         // 1. Kernel Forwarding & Route Localnet
         println!("[1/6] Inspecting Linux Kernel Packet Forwarding & Routing...");
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.forwarding=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.route_localnet=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.route_localnet=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.rp_filter=2"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.rp_filter=2"]).output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.ip_forward=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.forwarding=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.route_localnet=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.default.route_localnet=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.rp_filter=2"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.default.rp_filter=2"])
+            .output();
         println!("  [✓] Kernel IPv4 forwarding & route_localnet: ENABLED");
 
         // 2. WireGuard Interface & Handshake
@@ -27,7 +39,10 @@ impl DoctorManager {
         match wg_status {
             Ok(o) if o.status.success() => {
                 let out_str = String::from_utf8_lossy(&o.stdout);
-                let peers = out_str.lines().filter(|l| l.trim().starts_with("peer:")).count();
+                let peers = out_str
+                    .lines()
+                    .filter(|l| l.trim().starts_with("peer:"))
+                    .count();
                 if peers == 0 {
                     println!("  [!] Warning: Interface wg0 is UP, but NO PEERS are registered!");
                     println!("  [!] Gateway needs: wg set wg0 peer <NODE_PUBKEY> allowed-ips 10.200.0.2/32");
@@ -37,17 +52,30 @@ impl DoctorManager {
             }
             _ => {
                 println!("  [!] Interface wg0 is DOWN. Auto-healing interface...");
-                let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
-                let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
-                let _ = Command::new("ip").args(["rule", "del", "fwmark", "0x1"]).output();
-                let _ = Command::new("ip").args(["route", "flush", "table", "100"]).output();
+                let _ = Command::new("systemctl")
+                    .args(["stop", "wg-quick@wg0"])
+                    .output();
+                let _ = Command::new("ip")
+                    .args(["link", "del", "dev", "wg0"])
+                    .output();
+                let _ = Command::new("ip")
+                    .args(["rule", "del", "fwmark", "0x1"])
+                    .output();
+                let _ = Command::new("ip")
+                    .args(["route", "flush", "table", "100"])
+                    .output();
                 let up_out = Command::new("wg-quick").args(["up", "wg0"]).output();
                 if let Ok(ref u) = up_out {
                     if u.status.success() {
                         println!("  [✓] Interface wg0 brought UP successfully!");
-                        let _ = Command::new("systemctl").args(["enable", "--now", "wg-quick@wg0"]).output();
+                        let _ = Command::new("systemctl")
+                            .args(["enable", "--now", "wg-quick@wg0"])
+                            .output();
                     } else {
-                        println!("  [!] wg-quick error: {}", String::from_utf8_lossy(&u.stderr).trim());
+                        println!(
+                            "  [!] wg-quick error: {}",
+                            String::from_utf8_lossy(&u.stderr).trim()
+                        );
                     }
                 }
             }
@@ -59,19 +87,34 @@ impl DoctorManager {
             .map(|c| c.contains("10.200.0.1/24"))
             .unwrap_or(false);
 
-        let target_test_ip = if is_gateway { "10.200.0.2" } else { "10.200.0.1" };
-        let ping = Command::new("ping").args(["-c", "2", "-W", "1", target_test_ip]).output();
+        let target_test_ip = if is_gateway {
+            "10.200.0.2"
+        } else {
+            "10.200.0.1"
+        };
+        let ping = Command::new("ping")
+            .args(["-c", "2", "-W", "1", target_test_ip])
+            .output();
         match ping {
             Ok(p) if p.status.success() => {
                 let out = String::from_utf8_lossy(&p.stdout);
                 if let Some(rtt) = out.lines().last().and_then(|l| l.split('/').nth(4)) {
-                    println!("  [✓] WireGuard Tunnel Peer ({}) is REACHABLE! (Latency: {}ms)", target_test_ip, rtt);
+                    println!(
+                        "  [✓] WireGuard Tunnel Peer ({}) is REACHABLE! (Latency: {}ms)",
+                        target_test_ip, rtt
+                    );
                 } else {
-                    println!("  [✓] WireGuard Tunnel Peer ({}) is REACHABLE!", target_test_ip);
+                    println!(
+                        "  [✓] WireGuard Tunnel Peer ({}) is REACHABLE!",
+                        target_test_ip
+                    );
                 }
             }
             _ => {
-                println!("  [✗] ERROR: Tunnel Peer ({}) is UNREACHABLE!", target_test_ip);
+                println!(
+                    "  [✗] ERROR: Tunnel Peer ({}) is UNREACHABLE!",
+                    target_test_ip
+                );
                 if is_gateway {
                     println!("      -> Node has not connected yet, or Node Public Key is not added to Gateway.");
                     println!("      -> Run on Gateway: wg set wg0 peer <NODE_PUBLIC_KEY> allowed-ips 10.200.0.2/32");
@@ -83,10 +126,16 @@ impl DoctorManager {
 
         // 4. Background Daemon Services
         println!("[4/6] Checking WireNet Background Daemons...");
-        let gw_active = Command::new("systemctl").args(["is-active", "wirenet-gateway.service"]).output()
-            .map(|o| o.status.success()).unwrap_or(false);
-        let node_active = Command::new("systemctl").args(["is-active", "wirenet-node.service"]).output()
-            .map(|o| o.status.success()).unwrap_or(false);
+        let gw_active = Command::new("systemctl")
+            .args(["is-active", "wirenet-gateway.service"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        let node_active = Command::new("systemctl")
+            .args(["is-active", "wirenet-node.service"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
 
         if gw_active {
             println!("  [✓] wirenet-gateway.service is ACTIVE");
@@ -98,21 +147,47 @@ impl DoctorManager {
 
         // 5. Firewall Integrity & Localnet Fix
         println!("[5/6] Verifying Firewall & Policy Routing Rules...");
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.forwarding=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.rp_filter=0"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.rp_filter=0"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.wg0.rp_filter=0"]).output();
-        let _ = Command::new("iptables").args(["-P", "FORWARD", "ACCEPT"]).output();
-        let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-j", "ACCEPT"]).output();
-        let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-i", "wg0", "-j", "ACCEPT"]).output();
-        let _ = Command::new("iptables").args(["-I", "FORWARD", "1", "-o", "wg0", "-j", "ACCEPT"]).output();
-        let _ = Command::new("iptables").args(["-I", "DOCKER-USER", "1", "-j", "ACCEPT"]).output();
-        let _ = Command::new("iptables").args(["-I", "INPUT", "1", "-i", "wg0", "-j", "ACCEPT"]).output();
-        let _ = Command::new("iptables").args(["-I", "INPUT", "1", "-i", "lo", "-j", "ACCEPT"]).output();
-        
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.ip_forward=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.forwarding=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.rp_filter=0"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.default.rp_filter=0"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.wg0.rp_filter=0"])
+            .output();
+        let _ = Command::new("iptables")
+            .args(["-P", "FORWARD", "ACCEPT"])
+            .output();
+        let _ = Command::new("iptables")
+            .args(["-I", "FORWARD", "1", "-j", "ACCEPT"])
+            .output();
+        let _ = Command::new("iptables")
+            .args(["-I", "FORWARD", "1", "-i", "wg0", "-j", "ACCEPT"])
+            .output();
+        let _ = Command::new("iptables")
+            .args(["-I", "FORWARD", "1", "-o", "wg0", "-j", "ACCEPT"])
+            .output();
+        let _ = Command::new("iptables")
+            .args(["-I", "DOCKER-USER", "1", "-j", "ACCEPT"])
+            .output();
+        let _ = Command::new("iptables")
+            .args(["-I", "INPUT", "1", "-i", "wg0", "-j", "ACCEPT"])
+            .output();
+        let _ = Command::new("iptables")
+            .args(["-I", "INPUT", "1", "-i", "lo", "-j", "ACCEPT"])
+            .output();
+
         if !is_gateway {
-            let route_check = Command::new("ip").args(["route", "get", "1.1.1.1", "mark", "0x1"]).output();
+            let route_check = Command::new("ip")
+                .args(["route", "get", "1.1.1.1", "mark", "0x1"])
+                .output();
             if let Ok(ref rc) = route_check {
                 let out = String::from_utf8_lossy(&rc.stdout);
                 if out.contains("dev wg0") {
@@ -130,13 +205,16 @@ impl DoctorManager {
         if !docker_ports.is_empty() {
             println!("  [+] Discovered Running Pterodactyl Game Servers:");
             for (name, port, cip, proto) in &docker_ports {
-                println!("      • Server: {:<20} | Port: {:<5} | Container IP: {:<15} | Protocol: {}", name, port, cip, proto);
+                println!(
+                    "      • Server: {:<20} | Port: {:<5} | Container IP: {:<15} | Protocol: {}",
+                    name, port, cip, proto
+                );
             }
         }
 
         let timeout = Duration::from_millis(1500);
         let primary_ip = Self::get_primary_ip();
-        
+
         let mut test_ports = vec![25565];
         for (_, p, _, _) in &docker_ports {
             if !test_ports.contains(p) {
@@ -147,10 +225,22 @@ impl DoctorManager {
         let mut any_open = false;
         for &p in &test_ports {
             let targets = [
-                (format!("Primary Node IP ({}:{})", primary_ip, p), format!("{}:{}", primary_ip, p)),
-                (format!("Local Loopback (127.0.0.1:{})", p), format!("127.0.0.1:{}", p)),
-                (format!("Node Tunnel IP (10.200.0.2:{})", p), format!("10.200.0.2:{}", p)),
-                (format!("Gateway Tunnel IP (10.200.0.1:{})", p), format!("10.200.0.1:{}", p)),
+                (
+                    format!("Primary Node IP ({}:{})", primary_ip, p),
+                    format!("{}:{}", primary_ip, p),
+                ),
+                (
+                    format!("Local Loopback (127.0.0.1:{})", p),
+                    format!("127.0.0.1:{}", p),
+                ),
+                (
+                    format!("Node Tunnel IP (10.200.0.2:{})", p),
+                    format!("10.200.0.2:{}", p),
+                ),
+                (
+                    format!("Gateway Tunnel IP (10.200.0.1:{})", p),
+                    format!("10.200.0.1:{}", p),
+                ),
             ];
 
             for (label, addr_str) in &targets {
@@ -185,18 +275,29 @@ impl DoctorManager {
             let s = String::from_utf8_lossy(&o.stdout);
             for line in s.lines() {
                 let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() < 2 { continue; }
+                if parts.len() < 2 {
+                    continue;
+                }
                 let cid = parts[0];
                 let ports_str = parts[1];
                 let name = parts.get(2).unwrap_or(&"Container").to_string();
 
                 let ip_out = Command::new("docker")
-                    .args(["inspect", cid, "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"])
+                    .args([
+                        "inspect",
+                        cid,
+                        "--format",
+                        "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                    ])
                     .output();
                 let cip = match ip_out {
                     Ok(io) => {
                         let ip_s = String::from_utf8_lossy(&io.stdout).trim().to_string();
-                        if !ip_s.is_empty() { ip_s } else { "127.0.0.1".to_string() }
+                        if !ip_s.is_empty() {
+                            ip_s
+                        } else {
+                            "127.0.0.1".to_string()
+                        }
                     }
                     _ => "127.0.0.1".to_string(),
                 };
@@ -207,7 +308,9 @@ impl DoctorManager {
                         let host_side = &trimmed[..arrow_idx];
                         let container_side = &trimmed[arrow_idx + 2..];
 
-                        let port_num = host_side.split(':').last()
+                        let port_num = host_side
+                            .split(':')
+                            .next_back()
                             .and_then(|p| p.parse::<u16>().ok())
                             .unwrap_or(0);
 
@@ -230,7 +333,9 @@ impl DoctorManager {
     }
 
     fn get_primary_ip() -> String {
-        let out = Command::new("ip").args(["route", "get", "1.1.1.1"]).output();
+        let out = Command::new("ip")
+            .args(["route", "get", "1.1.1.1"])
+            .output();
         if let Ok(o) = out {
             let s = String::from_utf8_lossy(&o.stdout);
             let parts: Vec<&str> = s.split_whitespace().collect();

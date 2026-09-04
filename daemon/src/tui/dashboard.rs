@@ -56,7 +56,8 @@ impl TuiDashboard {
         let mut event_logs: VecDeque<String> = VecDeque::from(vec![
             "[SYSTEM] WireNet Real-Time Packet & Real IP Monitor Active".to_string(),
             "[TUNNEL] Encrypted WireGuard Kernel link active (10.200.0.1 ↔ 10.200.0.2)".to_string(),
-            "[SCANNER] Actively monitoring /proc/net/tcp and /proc/net/nf_conntrack for player IPs".to_string(),
+            "[SCANNER] Actively monitoring /proc/net/tcp and /proc/net/nf_conntrack for player IPs"
+                .to_string(),
         ]);
 
         let mut last_sample_time = Instant::now();
@@ -92,7 +93,10 @@ impl TuiDashboard {
                 // Scan real player IPs from Linux Kernel TCP and Conntrack tables
                 let discovered_conns = scan_real_player_connections();
                 for conn in &discovered_conns {
-                    if !active_connections.iter().any(|c| c.client_ip == conn.client_ip && c.client_port == conn.client_port) {
+                    if !active_connections
+                        .iter()
+                        .any(|c| c.client_ip == conn.client_ip && c.client_port == conn.client_port)
+                    {
                         let now = chrono_like_time(elapsed);
                         if event_logs.len() >= 10 {
                             event_logs.pop_front();
@@ -138,16 +142,41 @@ impl TuiDashboard {
                 // 1. Header Block
                 let title = Paragraph::new(vec![
                     Line::from(vec![
-                        Span::styled(" 🌐 WireNet ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            " 🌐 WireNet ",
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
+                        ),
                         Span::raw("── Real-Time Packet & Real IP Monitor (Rust Engine)"),
                     ]),
                     Line::from(vec![
                         Span::styled(" Status: ", Style::default().fg(Color::Gray)),
-                        Span::styled("● LIVE KERNEL LINK (100% Online)", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                        Span::styled(format!("  │  Uptime: {:02}:{:02}:{:02}  │  Active Player Connections: {}", elapsed / 3600, (elapsed % 3600) / 60, elapsed % 60, active_connections.len()), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            "● LIVE KERNEL LINK (100% Online)",
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            format!(
+                                "  │  Uptime: {:02}:{:02}:{:02}  │  Active Player Connections: {}",
+                                elapsed / 3600,
+                                (elapsed % 3600) / 60,
+                                elapsed % 60,
+                                active_connections.len()
+                            ),
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
                     ]),
                 ])
-                .block(Block::default().borders(Borders::ALL).title(" WireNet Live Engine "));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" WireNet Live Engine "),
+                );
                 f.render_widget(title, chunks[0]);
 
                 // 2. Live Packet Throughput Sparkline & Gauge
@@ -158,15 +187,26 @@ impl TuiDashboard {
 
                 let max_scale = (*packet_data.iter().max().unwrap_or(&10)).max(20);
                 let sparkline = Sparkline::default()
-                    .block(Block::default().borders(Borders::ALL).title(format!(" Live Traffic: {} pkts/sec (Total: {}) ", current_pps, total_cumulative_packets)))
-                    .style(Style::default().fg(if current_pps > 0 { Color::Green } else { Color::Cyan }))
+                    .block(Block::default().borders(Borders::ALL).title(format!(
+                        " Live Traffic: {} pkts/sec (Total: {}) ",
+                        current_pps, total_cumulative_packets
+                    )))
+                    .style(Style::default().fg(if current_pps > 0 {
+                        Color::Green
+                    } else {
+                        Color::Cyan
+                    }))
                     .data(&packet_data)
                     .max(max_scale);
                 f.render_widget(sparkline, sub_chunks[0]);
 
                 let load_percent = ((current_pps as f64 / 200.0) * 100.0).min(100.0) as u16;
                 let gauge = Gauge::default()
-                    .block(Block::default().borders(Borders::ALL).title(" Tunnel Load Capacity "))
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Tunnel Load Capacity "),
+                    )
                     .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
                     .percent(load_percent);
                 f.render_widget(gauge, sub_chunks[1]);
@@ -174,28 +214,43 @@ impl TuiDashboard {
                 // 3. Protection Telemetry Stats
                 let stats = Paragraph::new(vec![
                     Line::from(vec![
-                        Span::styled(" 🛡️  Shield Mode        : ", Style::default().fg(Color::Yellow)),
-                        Span::styled("STANDARD (Hardware SYN Cookies + Per-IP Rate Limiter)", Style::default().fg(Color::Green)),
+                        Span::styled(
+                            " 🛡️  Shield Mode        : ",
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        Span::styled(
+                            "STANDARD (Hardware SYN Cookies + Per-IP Rate Limiter)",
+                            Style::default().fg(Color::Green),
+                        ),
                     ]),
                     Line::from(vec![
-                        Span::styled(" 🔒  Tunnel Interface   : ", Style::default().fg(Color::Yellow)),
-                        Span::styled("wg0 Kernel Fastpath (10.200.0.1 ↔ 10.200.0.2)", Style::default().fg(Color::Cyan)),
+                        Span::styled(
+                            " 🔒  Tunnel Interface   : ",
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        Span::styled(
+                            "wg0 Kernel Fastpath (10.200.0.1 ↔ 10.200.0.2)",
+                            Style::default().fg(Color::Cyan),
+                        ),
                     ]),
                 ])
-                .block(Block::default().borders(Borders::ALL).title(" Live Protection Status "));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Live Protection Status "),
+                );
                 f.render_widget(stats, chunks[2]);
 
                 // 4. Live Active Player Client IPs Table (Real IPs instead of placeholder names!)
                 let rows: Vec<Row> = if active_connections.is_empty() {
-                    vec![
-                        Row::new(vec![
-                            "Waiting for players...".to_string(),
-                            "-".to_string(),
-                            "25565 - 25700".to_string(),
-                            "TCP / UDP".to_string(),
-                            "● LISTENING ON GATEWAY".to_string(),
-                        ]).style(Style::default().fg(Color::DarkGray)),
-                    ]
+                    vec![Row::new(vec![
+                        "Waiting for players...".to_string(),
+                        "-".to_string(),
+                        "25565 - 25700".to_string(),
+                        "TCP / UDP".to_string(),
+                        "● LISTENING ON GATEWAY".to_string(),
+                    ])
+                    .style(Style::default().fg(Color::DarkGray))]
                 } else {
                     active_connections
                         .iter()
@@ -223,10 +278,24 @@ impl TuiDashboard {
                     ],
                 )
                 .header(
-                    Row::new(vec!["Real Player IP", "Src Port", "Game Port", "Protocol", "Live Connection State"])
-                        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Row::new(vec![
+                        "Real Player IP",
+                        "Src Port",
+                        "Game Port",
+                        "Protocol",
+                        "Live Connection State",
+                    ])
+                    .style(
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 )
-                .block(Block::default().borders(Borders::ALL).title(" Live Connected Player IPs (100% Real IP Stream) "));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Live Connected Player IPs (100% Real IP Stream) "),
+                );
                 f.render_widget(table, chunks[3]);
 
                 // 5. Real-Time IP Connection Stream
@@ -234,7 +303,9 @@ impl TuiDashboard {
                     .iter()
                     .map(|log| {
                         let style = if log.contains("CONNECTED") || log.contains("INCOMING") {
-                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD)
                         } else if log.contains("TUNNEL") {
                             Style::default().fg(Color::Cyan)
                         } else {
@@ -244,19 +315,27 @@ impl TuiDashboard {
                     })
                     .collect();
 
-                let list = List::new(log_items)
-                    .block(Block::default().borders(Borders::ALL).title(" Real-Time Packet & IP Event Log "));
+                let list = List::new(log_items).block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Real-Time Packet & IP Event Log "),
+                );
                 f.render_widget(list, chunks[4]);
 
                 // 6. Footer
-                let footer = Paragraph::new(" Press [Q] or [Esc] to exit │ Live Kernel IP & Packet Sniffer Active ")
-                    .style(Style::default().fg(Color::DarkGray));
+                let footer = Paragraph::new(
+                    " Press [Q] or [Esc] to exit │ Live Kernel IP & Packet Sniffer Active ",
+                )
+                .style(Style::default().fg(Color::DarkGray));
                 f.render_widget(footer, chunks[5]);
             })?;
 
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
-                    if key.code == KeyCode::Char('q') || key.code == KeyCode::Char('Q') || key.code == KeyCode::Esc {
+                    if key.code == KeyCode::Char('q')
+                        || key.code == KeyCode::Char('Q')
+                        || key.code == KeyCode::Esc
+                    {
                         return Ok(());
                     }
                 }
@@ -275,7 +354,12 @@ fn read_kernel_packets(iface: &str) -> u64 {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 11 {
                     let name = parts[0].trim_end_matches(':');
-                    if name == iface || name.starts_with("wg") || name.starts_with("eth") || name.starts_with("ens") || name.starts_with("enp") {
+                    if name == iface
+                        || name.starts_with("wg")
+                        || name.starts_with("eth")
+                        || name.starts_with("ens")
+                        || name.starts_with("enp")
+                    {
                         let rx_pkts = parts[2].parse::<u64>().unwrap_or(0);
                         let tx_pkts = parts[10].parse::<u64>().unwrap_or(0);
                         total += rx_pkts + tx_pkts;
@@ -329,7 +413,9 @@ fn scan_real_player_connections() -> Vec<ClientConnection> {
                     // State 01 = ESTABLISHED
                     if state == "01" {
                         if let Some((_l_ip, l_port)) = parse_hex_socket_addr(local_addr) {
-                            if (25565..=25700).contains(&l_port) || (30000..=30100).contains(&l_port) {
+                            if (25565..=25700).contains(&l_port)
+                                || (30000..=30100).contains(&l_port)
+                            {
                                 if let Some((r_ip, r_port)) = parse_hex_socket_addr(rem_addr) {
                                     if r_ip != "127.0.0.1" && !r_ip.starts_with("10.200.0.") {
                                         conns.push(ClientConnection {
@@ -351,7 +437,9 @@ fn scan_real_player_connections() -> Vec<ClientConnection> {
         // 2. Scan /proc/net/nf_conntrack for NAT-forwarded player IPs
         if let Ok(content) = fs::read_to_string("/proc/net/nf_conntrack") {
             for line in content.lines() {
-                if (line.contains("dport=25565") || line.contains("dport=25566")) && line.contains("src=") {
+                if (line.contains("dport=25565") || line.contains("dport=25566"))
+                    && line.contains("src=")
+                {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     let mut src_ip = "";
                     let mut src_port = 0u16;
@@ -367,8 +455,14 @@ fn scan_real_player_connections() -> Vec<ClientConnection> {
                         }
                     }
 
-                    if !src_ip.is_empty() && src_ip != "127.0.0.1" && !src_ip.starts_with("10.200.0.") {
-                        if !conns.iter().any(|c| c.client_ip == src_ip && c.client_port == src_port) {
+                    if !src_ip.is_empty()
+                        && src_ip != "127.0.0.1"
+                        && !src_ip.starts_with("10.200.0.")
+                    {
+                        if !conns
+                            .iter()
+                            .any(|c| c.client_ip == src_ip && c.client_port == src_port)
+                        {
                             conns.push(ClientConnection {
                                 client_ip: src_ip.to_string(),
                                 client_port: src_port,

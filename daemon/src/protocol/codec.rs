@@ -36,8 +36,8 @@ impl Encoder<Message> for WireNetCodec {
     type Error = anyhow::Error;
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<()> {
-        let serialized = serde_json::to_vec(&item)
-            .context("Failed to serialize WireNet protocol message")?;
+        let serialized =
+            serde_json::to_vec(&item).context("Failed to serialize WireNet protocol message")?;
         self.length_codec.encode(serialized.into(), dst)?;
         Ok(())
     }

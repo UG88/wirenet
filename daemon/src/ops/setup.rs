@@ -13,27 +13,52 @@ impl SetupManager {
 
         // 1. Enable IP Forwarding
         println!("[1/5] Enabling Kernel IP Forwarding...");
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.forwarding=1"]).output();
-        let _ = Command::new("systemctl").args(["stop", "rinetd", "haproxy", "wirenet-gateway"]).output();
-        let _ = Command::new("systemctl").args(["disable", "rinetd", "haproxy"]).output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.ip_forward=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.forwarding=1"])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["stop", "rinetd", "haproxy", "wirenet-gateway"])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["disable", "rinetd", "haproxy"])
+            .output();
 
         // 2. Ensure WireGuard is installed
         println!("[2/5] Checking WireGuard installation...");
-        if !Command::new("which").arg("wg").output().map(|o| o.status.success()).unwrap_or(false) {
+        if !Command::new("which")
+            .arg("wg")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
             println!("  [+] Installing WireGuard package...");
             let _ = Command::new("apt-get").args(["update", "-qq"]).output();
-            let _ = Command::new("apt-get").args(["install", "-y", "-qq", "wireguard", "wireguard-tools", "iptables"]).output();
+            let _ = Command::new("apt-get")
+                .args([
+                    "install",
+                    "-y",
+                    "-qq",
+                    "wireguard",
+                    "wireguard-tools",
+                    "iptables",
+                ])
+                .output();
         }
 
         // 3. Generate Keys if missing
         println!("[3/5] Generating Cryptographic WireGuard Keys...");
         let _ = fs::create_dir_all("/etc/wireguard");
-        
+
         let priv_key = if let Ok(k) = fs::read_to_string("/etc/wireguard/gateway_private.key") {
             k.trim().to_string()
         } else {
-            let out = Command::new("wg").arg("genkey").output().context("Failed to run wg genkey")?;
+            let out = Command::new("wg")
+                .arg("genkey")
+                .output()
+                .context("Failed to run wg genkey")?;
             let k = String::from_utf8_lossy(&out.stdout).trim().to_string();
             let _ = fs::write("/etc/wireguard/gateway_private.key", &k);
             k
@@ -89,19 +114,34 @@ impl SetupManager {
         // 5. Activate Interface & Systemd Service
         println!("[5/5] Activating WireGuard wg0 interface...");
         let _ = Command::new("ufw").args(["allow", "51820/udp"]).output();
-        let _ = Command::new("ufw").args(["allow", &format!("{}:{}/tcp", ports_start, ports_end)]).output();
-        let _ = Command::new("ufw").args(["allow", &format!("{}:{}/udp", ports_start, ports_end)]).output();
+        let _ = Command::new("ufw")
+            .args(["allow", &format!("{}:{}/tcp", ports_start, ports_end)])
+            .output();
+        let _ = Command::new("ufw")
+            .args(["allow", &format!("{}:{}/udp", ports_start, ports_end)])
+            .output();
         let _ = Command::new("ufw").args(["allow", "9000"]).output();
-        let _ = Command::new("iptables").args(["-P", "FORWARD", "ACCEPT"]).output();
-        let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
-        let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
+        let _ = Command::new("iptables")
+            .args(["-P", "FORWARD", "ACCEPT"])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["stop", "wg-quick@wg0"])
+            .output();
+        let _ = Command::new("ip")
+            .args(["link", "del", "dev", "wg0"])
+            .output();
         let up = Command::new("wg-quick").args(["up", "wg0"]).output();
         if let Ok(ref u) = up {
             if !u.status.success() {
-                println!("  [!] Notice: {}", String::from_utf8_lossy(&u.stderr).trim());
+                println!(
+                    "  [!] Notice: {}",
+                    String::from_utf8_lossy(&u.stderr).trim()
+                );
             }
         }
-        let _ = Command::new("systemctl").args(["enable", "--now", "wg-quick@wg0"]).output();
+        let _ = Command::new("systemctl")
+            .args(["enable", "--now", "wg-quick@wg0"])
+            .output();
 
         // Create wirenet-gateway.service
         Self::install_gateway_systemd(ports_start, ports_end)?;
@@ -115,7 +155,10 @@ impl SetupManager {
         println!("==========================================================");
         if existing_peers.is_empty() {
             println!(" Next Step: On your Node VPS, run:");
-            println!("   wirenet setup node --gateway <YOUR_GATEWAY_PUBLIC_IP> --gateway-key \"{}\"", pub_key);
+            println!(
+                "   wirenet setup node --gateway <YOUR_GATEWAY_PUBLIC_IP> --gateway-key \"{}\"",
+                pub_key
+            );
         } else {
             println!(" [✓] Existing authorized Node peers were preserved!");
         }
@@ -207,30 +250,61 @@ impl SetupManager {
 
         // 1. Enable IP Forwarding, Route Localnet & Loose RP Filter
         println!("[1/5] Enabling Kernel IP Forwarding & Policy Routing...");
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.route_localnet=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.route_localnet=1"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.rp_filter=2"]).output();
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.rp_filter=2"]).output();
-        let _ = Command::new("systemctl").args(["stop", "rinetd", "haproxy"]).output();
-        let _ = Command::new("systemctl").args(["disable", "rinetd", "haproxy"]).output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.ip_forward=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.route_localnet=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.default.route_localnet=1"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.rp_filter=2"])
+            .output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.default.rp_filter=2"])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["stop", "rinetd", "haproxy"])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["disable", "rinetd", "haproxy"])
+            .output();
 
         // 2. Ensure WireGuard is installed
         println!("[2/5] Checking WireGuard installation...");
-        if !Command::new("which").arg("wg").output().map(|o| o.status.success()).unwrap_or(false) {
+        if !Command::new("which")
+            .arg("wg")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
             println!("  [+] Installing WireGuard package...");
             let _ = Command::new("apt-get").args(["update", "-qq"]).output();
-            let _ = Command::new("apt-get").args(["install", "-y", "-qq", "wireguard", "wireguard-tools", "iptables"]).output();
+            let _ = Command::new("apt-get")
+                .args([
+                    "install",
+                    "-y",
+                    "-qq",
+                    "wireguard",
+                    "wireguard-tools",
+                    "iptables",
+                ])
+                .output();
         }
 
         // 3. Generate Keys
         println!("[3/5] Generating Node Cryptographic Keys...");
         let _ = fs::create_dir_all("/etc/wireguard");
-        
+
         let priv_key = if let Ok(k) = fs::read_to_string("/etc/wireguard/node_private.key") {
             k.trim().to_string()
         } else {
-            let out = Command::new("wg").arg("genkey").output().context("Failed to run wg genkey")?;
+            let out = Command::new("wg")
+                .arg("genkey")
+                .output()
+                .context("Failed to run wg genkey")?;
             let k = String::from_utf8_lossy(&out.stdout).trim().to_string();
             let _ = fs::write("/etc/wireguard/node_private.key", &k);
             k
@@ -253,32 +327,51 @@ impl SetupManager {
 
         let mut custom_post_up = String::new();
         let mut custom_post_down = String::new();
-        
-        let out = Command::new("docker").args(["ps", "--format", "{{.ID}}\t{{.Ports}}"]).output();
+
+        let out = Command::new("docker")
+            .args(["ps", "--format", "{{.ID}}\t{{.Ports}}"])
+            .output();
         if let Ok(o) = out {
             let s = String::from_utf8_lossy(&o.stdout);
             for line in s.lines() {
                 let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() < 2 { continue; }
+                if parts.len() < 2 {
+                    continue;
+                }
                 let cid = parts[0];
                 let ports_str = parts[1];
                 let ip_out = Command::new("docker")
-                    .args(["inspect", cid, "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"])
+                    .args([
+                        "inspect",
+                        cid,
+                        "--format",
+                        "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                    ])
                     .output();
                 if let Ok(io) = ip_out {
                     let cip = String::from_utf8_lossy(&io.stdout).trim().to_string();
                     if !cip.is_empty() {
                         for port_part in ports_str.split(',') {
                             if let Some(arrow) = port_part.find("->") {
-                                let host_p = port_part[..arrow].split(':').last().unwrap_or("0").trim();
-                                let cont_p = port_part[arrow + 2..].split('/').next().unwrap_or("0").trim();
-                                if let (Ok(hp), Ok(cp)) = (host_p.parse::<u16>(), cont_p.parse::<u16>()) {
+                                let host_p = port_part[..arrow]
+                                    .split(':')
+                                    .next_back()
+                                    .unwrap_or("0")
+                                    .trim();
+                                let cont_p = port_part[arrow + 2..]
+                                    .split('/')
+                                    .next()
+                                    .unwrap_or("0")
+                                    .trim();
+                                if let (Ok(hp), Ok(cp)) =
+                                    (host_p.parse::<u16>(), cont_p.parse::<u16>())
+                                {
                                     if hp >= 1024 {
                                         custom_post_up.push_str(&format!("PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p tcp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
                                         custom_post_up.push_str(&format!("PostUp = iptables -t nat -I PREROUTING 1 -i wg0 -p udp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
                                         custom_post_up.push_str(&format!("PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p tcp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
                                         custom_post_up.push_str(&format!("PostUp = iptables -t nat -I PREROUTING 1 -d 10.200.0.2 -p udp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
-                                        
+
                                         custom_post_down.push_str(&format!("PostDown = iptables -t nat -D PREROUTING -i wg0 -p tcp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
                                         custom_post_down.push_str(&format!("PostDown = iptables -t nat -D PREROUTING -i wg0 -p udp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
                                         custom_post_down.push_str(&format!("PostDown = iptables -t nat -D PREROUTING -d 10.200.0.2 -p tcp --dport {} -j DNAT --to-destination {}:{}\n", hp, cip, cp));
@@ -341,17 +434,30 @@ impl SetupManager {
 
         // 5. Activate Interface & Systemd Service
         println!("[5/5] Activating WireGuard wg0 interface...");
-        let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
-        let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
-        let _ = Command::new("ip").args(["rule", "del", "fwmark", "0x1"]).output();
-        let _ = Command::new("ip").args(["route", "flush", "table", "100"]).output();
+        let _ = Command::new("systemctl")
+            .args(["stop", "wg-quick@wg0"])
+            .output();
+        let _ = Command::new("ip")
+            .args(["link", "del", "dev", "wg0"])
+            .output();
+        let _ = Command::new("ip")
+            .args(["rule", "del", "fwmark", "0x1"])
+            .output();
+        let _ = Command::new("ip")
+            .args(["route", "flush", "table", "100"])
+            .output();
         let up = Command::new("wg-quick").args(["up", "wg0"]).output();
         if let Ok(ref u) = up {
             if !u.status.success() {
-                println!("  [!] Notice: {}", String::from_utf8_lossy(&u.stderr).trim());
+                println!(
+                    "  [!] Notice: {}",
+                    String::from_utf8_lossy(&u.stderr).trim()
+                );
             }
         }
-        let _ = Command::new("systemctl").args(["enable", "--now", "wg-quick@wg0"]).output();
+        let _ = Command::new("systemctl")
+            .args(["enable", "--now", "wg-quick@wg0"])
+            .output();
 
         // Create wirenet-node.service
         Self::install_node_systemd(gateway_ip)?;
@@ -381,7 +487,16 @@ impl SetupManager {
         println!("[+] Allowed IP Ranges          : {}", allowed_ips);
 
         // 1. Add to active runtime WireGuard interface
-        let _ = Command::new("wg").args(["set", "wg0", "peer", trimmed_key, "allowed-ips", &allowed_ips]).output();
+        let _ = Command::new("wg")
+            .args([
+                "set",
+                "wg0",
+                "peer",
+                trimmed_key,
+                "allowed-ips",
+                &allowed_ips,
+            ])
+            .output();
 
         // 2. Persist to /etc/wireguard/wg0.conf if not already present
         let mut conf_content = fs::read_to_string("/etc/wireguard/wg0.conf").unwrap_or_default();
@@ -403,7 +518,9 @@ impl SetupManager {
     }
 
     fn get_default_iface() -> String {
-        let out = Command::new("ip").args(["route", "show", "default"]).output();
+        let out = Command::new("ip")
+            .args(["route", "show", "default"])
+            .output();
         if let Ok(o) = out {
             let s = String::from_utf8_lossy(&o.stdout);
             let parts: Vec<&str> = s.split_whitespace().collect();
@@ -434,14 +551,17 @@ impl SetupManager {
         );
         let _ = fs::write("/etc/systemd/system/wirenet-gateway.service", content);
         let _ = Command::new("systemctl").args(["daemon-reload"]).output();
-        let _ = Command::new("systemctl").args(["enable", "--now", "wirenet-gateway.service"]).output();
-        let _ = Command::new("systemctl").args(["restart", "wirenet-gateway.service"]).output();
+        let _ = Command::new("systemctl")
+            .args(["enable", "--now", "wirenet-gateway.service"])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["restart", "wirenet-gateway.service"])
+            .output();
         Ok(())
     }
 
     fn install_node_systemd(_gateway_ip: &str) -> Result<()> {
-        let content = format!(
-            "[Unit]\n\
+        let content = "[Unit]\n\
             Description=WireNet Rust Node Agent & Docker Bridge Daemon\n\
             After=network.target wg-quick@wg0.service docker.service\n\
             Wants=wg-quick@wg0.service docker.service\n\n\
@@ -453,11 +573,15 @@ impl SetupManager {
             LimitNOFILE=65535\n\n\
             [Install]\n\
             WantedBy=multi-user.target\n"
-        );
+            .to_string();
         let _ = fs::write("/etc/systemd/system/wirenet-node.service", content);
         let _ = Command::new("systemctl").args(["daemon-reload"]).output();
-        let _ = Command::new("systemctl").args(["enable", "--now", "wirenet-node.service"]).output();
-        let _ = Command::new("systemctl").args(["restart", "wirenet-node.service"]).output();
+        let _ = Command::new("systemctl")
+            .args(["enable", "--now", "wirenet-node.service"])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["restart", "wirenet-node.service"])
+            .output();
         Ok(())
     }
 
@@ -475,7 +599,9 @@ impl SetupManager {
             drop(stdin); // Explicitly close stdin to send EOF
         }
 
-        let out = child.wait_with_output().context("Failed to wait for wg pubkey output")?;
+        let out = child
+            .wait_with_output()
+            .context("Failed to wait for wg pubkey output")?;
         let pub_key = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if pub_key.is_empty() {
             return Err(anyhow::anyhow!("wg pubkey returned an empty string"));
@@ -484,7 +610,9 @@ impl SetupManager {
     }
 
     fn get_primary_ip() -> String {
-        let out = Command::new("ip").args(["route", "get", "1.1.1.1"]).output();
+        let out = Command::new("ip")
+            .args(["route", "get", "1.1.1.1"])
+            .output();
         if let Ok(o) = out {
             let s = String::from_utf8_lossy(&o.stdout);
             let parts: Vec<&str> = s.split_whitespace().collect();

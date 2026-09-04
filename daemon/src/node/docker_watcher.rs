@@ -46,19 +46,30 @@ impl DockerWatcher {
             let s = String::from_utf8_lossy(&o.stdout);
             for line in s.lines() {
                 let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() < 2 { continue; }
+                if parts.len() < 2 {
+                    continue;
+                }
                 let container_id = parts[0];
                 let ports_str = parts[1];
                 let name = parts.get(2).map(|&n| n.to_string());
 
                 // Extract container internal IP address
                 let ip_out = std::process::Command::new("docker")
-                    .args(["inspect", container_id, "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"])
+                    .args([
+                        "inspect",
+                        container_id,
+                        "--format",
+                        "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                    ])
                     .output();
                 let container_ip = match ip_out {
                     Ok(io) => {
                         let ip_str = String::from_utf8_lossy(&io.stdout).trim().to_string();
-                        if !ip_str.is_empty() { Some(ip_str) } else { None }
+                        if !ip_str.is_empty() {
+                            Some(ip_str)
+                        } else {
+                            None
+                        }
                     }
                     _ => None,
                 };
@@ -69,11 +80,15 @@ impl DockerWatcher {
                         let host_side = &trimmed[..arrow_idx];
                         let container_side = &trimmed[arrow_idx + 2..];
 
-                        let port_num = host_side.split(':').last()
+                        let port_num = host_side
+                            .split(':')
+                            .next_back()
                             .and_then(|p| p.parse::<u16>().ok())
                             .unwrap_or(0);
 
-                        let priv_port = container_side.split('/').next()
+                        let priv_port = container_side
+                            .split('/')
+                            .next()
                             .and_then(|p| p.parse::<u16>().ok())
                             .unwrap_or(port_num);
 
@@ -85,7 +100,9 @@ impl DockerWatcher {
                             ProtocolType::Both
                         };
 
-                        if port_num >= 1024 && !mappings.iter().any(|m: &PortMapping| m.port == port_num) {
+                        if port_num >= 1024
+                            && !mappings.iter().any(|m: &PortMapping| m.port == port_num)
+                        {
                             mappings.push(PortMapping {
                                 port: port_num,
                                 protocol: proto,
@@ -103,8 +120,8 @@ impl DockerWatcher {
 
     #[cfg(unix)]
     async fn scan_via_unix_socket(&self) -> Result<Vec<PortMapping>> {
-        use tokio::net::UnixStream;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::UnixStream;
 
         let mut stream = UnixStream::connect(&self.socket_path).await?;
         let request = "GET /containers/json HTTP/1.1\r\nHost: docker\r\n\r\n";
@@ -114,7 +131,9 @@ impl DockerWatcher {
         let mut buf = [0u8; 4096];
         loop {
             let n = stream.read(&mut buf).await?;
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             response.extend_from_slice(&buf[..n]);
             if response.windows(4).any(|w| w == b"\r\n\r\n") && response.len() > 500 {
                 break;
@@ -130,7 +149,8 @@ impl DockerWatcher {
             if let Ok(containers) = serde_json::from_str::<serde_json::Value>(json_body) {
                 if let Some(array) = containers.as_array() {
                     for c in array {
-                        let name = c["Names"].as_array()
+                        let name = c["Names"]
+                            .as_array()
                             .and_then(|n| n.first())
                             .and_then(|n| n.as_str())
                             .map(|s| s.trim_start_matches('/').to_string());

@@ -1,0 +1,26 @@
+# WireNet Authoritative Specification
+
+**Status:** target specification, 2026-09-04.  
+**Scope:** secure, transparent IPv4 TCP/UDP ingress for private Pterodactyl/Docker backends.  
+**Primary sources:** [WIRENET_ARCHITECTURE.md](WIRENET_ARCHITECTURE.md), [WIRENET_NETWORKING.md](WIRENET_NETWORKING.md), [WIRENET_SECURITY.md](WIRENET_SECURITY.md), [WIRENET_OPERATIONS.md](WIRENET_OPERATIONS.md), and [WIRENET_TESTING.md](WIRENET_TESTING.md).
+
+## Non-negotiable invariants
+
+1. Customer traffic is forwarded by the Linux kernel: routing, nftables, conntrack, and WireGuard. No WireNet userspace proxy accepts normal game traffic.
+2. Gateway DNAT preserves the client source address; no WireGuard-game-flow SNAT/MASQUERADE is permitted.
+3. The node restores a conntrack flow mark and policy-routes matching replies through the gateway's WireGuard interface.
+4. Backends are private. New game traffic from a node's provider/public interface is denied.
+5. Mappings are generic `(public IPv4, port, protocol) -> server/node/backend endpoint` allocations, not Minecraft ranges or hard-coded addresses.
+6. A server/node/customer has a durable ID. Ephemeral container addresses are endpoints, not identities.
+7. WireGuard is the transport; WireNet never implements VPN cryptography.
+8. The controller manages desired state and is outside the data path. Controller failure does not remove applied mappings.
+9. A configuration change is validated, staged, applied atomically, probed, acknowledged, audited, and rollback-capable.
+10. No application plugin, Velocity/Bungee configuration, PROXY protocol, or special customer client is required for normal operation.
+
+## Current-state caveat
+
+The inspected code does not yet satisfy this specification. The exact differences and component dispositions are in [WIRENET_GAP_ANALYSIS.md](WIRENET_GAP_ANALYSIS.md); the safe transition sequence is [WIRENET_MIGRATION.md](WIRENET_MIGRATION.md).
+
+## Authority and change control
+
+When source code, old README material, ignored `.ai` notes, or ad-hoc host rules conflict with this document, this document and its linked Markdown references govern the replacement design. Any amendment must update the architecture, security, operations, and test documents together and include an ADR/audit rationale.
