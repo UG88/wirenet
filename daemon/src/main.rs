@@ -519,10 +519,22 @@ async fn main() -> Result<()> {
                 allow_remote,
             } => {
                 dashboard_server::validate_listen(listen, allow_remote)?;
-                let token = dashboard_server::load_token(&token_file)?;
+                let token = if token_file.exists() {
+                    dashboard_server::load_token(&token_file)?
+                } else {
+                    let t = dashboard_server::create_token(&token_file)?;
+                    println!("Notice: Generated new secure dashboard token at: {}", token_file.display());
+                    t
+                };
                 let store = controller::Store::open(&database)?;
                 println!("Starting WireNet dashboard on http://{listen}");
                 println!("Backend database: {}", database.display());
+                println!("Dashboard token: {token}");
+                if listen.ip().is_loopback() {
+                    println!("\n[TIP] Dashboard is currently bound to loopback ({listen}).");
+                    println!("To access it directly over the VPS public IP, restart with:");
+                    println!("  wirenet dashboard serve --listen 0.0.0.0:8080 --allow-remote\n");
+                }
                 dashboard_server::serve(store, listen, token).await?;
             }
             DashboardCommands::Token { token_file } => {
