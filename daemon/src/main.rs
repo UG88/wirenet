@@ -1,23 +1,16 @@
-mod config;
-pub mod controller;
-pub mod dashboard_server;
-mod gateway;
-pub mod net;
-mod node;
-mod ops;
-mod protocol;
-mod tui;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use config::{GatewayConfig, NodeConfig};
-use gateway::{GatewayReconciler, GatewayServer};
-use node::{NodeAgent, NodeReconciler};
-use ops::{
+use std::sync::Arc;
+use wirenet_daemon::config::{GatewayConfig, NodeConfig};
+use wirenet_daemon::controller;
+use wirenet_daemon::dashboard_server;
+use wirenet_daemon::gateway::{GatewayReconciler, GatewayServer};
+use wirenet_daemon::net;
+use wirenet_daemon::node::{self, NodeAgent, NodeReconciler};
+use wirenet_daemon::ops::{
     DoctorManager, SetupManager, ShieldManager, StatusManager, UninstallManager, UpdateManager,
 };
-use std::sync::Arc;
-use tui::TuiDashboard;
+use wirenet_daemon::tui::TuiDashboard;
 
 #[derive(Parser)]
 #[command(name = "wirenet")]

@@ -5,6 +5,18 @@ edition = "2021"
 authors = ["UG88 <untilgamer888@gmail.com>"]
 description = "High-Performance WireNet Tunnel & Anti-DDoS Daemon for Game Servers"
 
+[lib]
+name = "wirenet_daemon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wirenet"
+path = "src/main.rs"
+
+[[bin]]
+name = "wirenet-node"
+path = "src/node_main.rs"
+
 [dependencies]
 tokio = { version = "1.38", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
