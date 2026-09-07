@@ -63,6 +63,7 @@ impl GatewayRouter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_target_node_ip(&self, port: u16) -> Option<String> {
         let node_id = self.port_to_node.get(&port)?;
         let session = self.nodes.get(&*node_id)?;

@@ -16,6 +16,7 @@ pub struct ShieldTelemetry {
     pub shield_mode: String,
 }
 
+#[allow(dead_code)]
 struct IpRateState {
     tokens: f64,
     last_update: Instant,
@@ -61,6 +62,7 @@ impl AntiDDoSShield {
         *w = mode.to_string();
     }
 
+    #[allow(dead_code)]
     pub fn check_connection(&self, ip: IpAddr) -> bool {
         self.total_conns.fetch_add(1, Ordering::Relaxed);
         let now = Instant::now();
@@ -88,6 +90,7 @@ impl AntiDDoSShield {
         }
     }
 
+    #[allow(dead_code)]
     pub fn connection_closed(&self, ip: IpAddr) {
         if let Some(mut entry) = self.ip_table.get_mut(&ip) {
             if entry.active_count > 0 {

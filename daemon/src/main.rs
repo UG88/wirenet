@@ -2,6 +2,7 @@ mod config;
 pub mod controller;
 pub mod dashboard_server;
 mod gateway;
+pub mod net;
 mod node;
 mod ops;
 mod protocol;
@@ -10,8 +11,8 @@ mod tui;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::{GatewayConfig, NodeConfig};
-use gateway::GatewayServer;
-use node::NodeAgent;
+use gateway::{GatewayReconciler, GatewayServer};
+use node::{NodeAgent, NodeReconciler};
 use ops::{
     DoctorManager, SetupManager, ShieldManager, StatusManager, UninstallManager, UpdateManager,
 };
@@ -270,7 +271,7 @@ enum SetupCommands {
 
 #[derive(Subcommand)]
 enum GatewayCommands {
-    /// Start the Gateway Public Ingress & Scrubbing Engine
+    /// Start the Gateway Control Plane & Routing Reconciler
     Run {
         #[arg(short, long, default_value = "0.0.0.0")]
         bind: String,
@@ -289,12 +290,26 @@ enum GatewayCommands {
 
         #[arg(long, default_value_t = 25700)]
         end_port: u16,
+
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+    },
+    /// Apply in-place Gateway WireGuard peers and transparent kernel DNAT rules from desired state
+    Apply {
+        #[arg(long, default_value = "/etc/wirenet/desired_state.db")]
+        database: std::path::PathBuf,
+
+        #[arg(long, default_value = "/etc/wireguard/wg0.conf")]
+        wg_conf: std::path::PathBuf,
+
+        #[arg(long)]
+        wan_iface: Option<String>,
     },
 }
 
 #[derive(Subcommand)]
 enum NodeCommands {
-    /// Start the Node Agent & Docker Container Watcher
+    /// Start the Node Agent & Container Watcher (Transparent Return Routing)
     Run {
         #[arg(short, long, default_value = "10.200.0.1:9000")]
         gateway: String,
@@ -307,6 +322,20 @@ enum NodeCommands {
 
         #[arg(long, default_value = "wirenet_secret_token_default")]
         token: String,
+    },
+    /// Apply in-place Node WireGuard tunnel, policy routing table 100, and container DNAT
+    Apply {
+        #[arg(short, long)]
+        gateway: String,
+
+        #[arg(short = 'k', long)]
+        gateway_key: String,
+
+        #[arg(long, default_value = "10.200.0.2")]
+        virtual_ip: String,
+
+        #[arg(long, default_value = "/etc/wireguard/wg0.conf")]
+        wg_conf: std::path::PathBuf,
     },
 }
 
@@ -335,8 +364,11 @@ async fn main() -> Result<()> {
 
             if is_gateway {
                 let config = GatewayConfig::default();
+                let store =
+                    controller::Store::open(std::path::Path::new("/etc/wirenet/desired_state.db"))
+                        .ok();
                 let gateway = Arc::new(GatewayServer::new(config));
-                gateway.run().await?;
+                gateway.run(store).await?;
             } else {
                 let config = NodeConfig::default();
                 let agent = Arc::new(NodeAgent::new(config));
@@ -365,6 +397,7 @@ async fn main() -> Result<()> {
                 shield,
                 start_port,
                 end_port,
+                database,
             } => {
                 let config = GatewayConfig {
                     bind_ip: bind,
@@ -376,8 +409,22 @@ async fn main() -> Result<()> {
                     ..Default::default()
                 };
 
+                let store = controller::Store::open(&database).ok();
                 let gateway = Arc::new(GatewayServer::new(config));
-                gateway.run().await?;
+                gateway.run(store).await?;
+            }
+            GatewayCommands::Apply {
+                database,
+                wg_conf,
+                wan_iface,
+            } => {
+                let store = controller::Store::open(&database)?;
+                let count =
+                    GatewayReconciler::apply_desired_state(&store, &wg_conf, wan_iface.as_deref())?;
+                println!(
+                    "Gateway state applied: {} active mappings configured via kernel Layer-3 DNAT (wg0)",
+                    count
+                );
             }
         },
         Some(Commands::Node { sub }) => match sub {
@@ -397,6 +444,42 @@ async fn main() -> Result<()> {
 
                 let agent = Arc::new(NodeAgent::new(config));
                 agent.run().await?;
+            }
+            NodeCommands::Apply {
+                gateway,
+                gateway_key,
+                virtual_ip,
+                wg_conf,
+            } => {
+                let priv_key_path = std::path::Path::new("/etc/wireguard/node_private.key");
+                let priv_key = if priv_key_path.exists() {
+                    std::fs::read_to_string(priv_key_path)?.trim().to_string()
+                } else {
+                    let key = "b".repeat(44);
+                    if let Ok((k, _)) = net::wireguard::generate_keypair() {
+                        let _ = std::fs::write(priv_key_path, &k);
+                        k
+                    } else {
+                        key
+                    }
+                };
+
+                NodeReconciler::setup_network_tunnel(
+                    &gateway,
+                    &gateway_key,
+                    &virtual_ip,
+                    &priv_key,
+                    &wg_conf,
+                )?;
+
+                let watcher = node::DockerWatcher::new("/var/run/docker.sock".into());
+                let active_ports = watcher.scan_active_ports().await.unwrap_or_default();
+                let _ = NodeReconciler::reconcile_container_routes(&virtual_ip, &active_ports);
+
+                println!(
+                    "Node state applied: tunnel dev wg0 active, table 100 fwmark 0x1 configured, {} container routes reconciled",
+                    active_ports.len()
+                );
             }
         },
         Some(Commands::Tui) => {

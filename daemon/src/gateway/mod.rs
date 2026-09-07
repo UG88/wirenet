@@ -4,7 +4,6 @@ pub mod shield;
 
 #[allow(unused_imports)]
 pub use router::GatewayRouter;
-#[allow(unused_imports)]
-pub use server::GatewayServer;
+pub use server::{GatewayReconciler, GatewayServer};
 #[allow(unused_imports)]
 pub use shield::{AntiDDoSShield, ShieldTelemetry};
