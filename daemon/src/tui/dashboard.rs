@@ -1,3 +1,4 @@
+use crate::net::telemetry::TelemetryCollector;
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -12,22 +13,10 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Row, Sparkline, Table},
     Terminal,
 };
-use std::collections::VecDeque;
-#[allow(unused_imports)]
-use std::fs;
 use std::io;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub struct TuiDashboard;
-
-#[derive(Clone, Debug)]
-struct ClientConnection {
-    client_ip: String,
-    client_port: u16,
-    game_port: u16,
-    protocol: String,
-    state: String,
-}
 
 impl TuiDashboard {
     pub fn run() -> Result<()> {
@@ -51,78 +40,14 @@ impl TuiDashboard {
     }
 
     fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Result<()> {
-        let start_time = Instant::now();
-        let mut packet_history: VecDeque<u64> = VecDeque::from(vec![0; 40]);
-        let mut event_logs: VecDeque<String> = VecDeque::from(vec![
-            "[SYSTEM] WireNet Real-Time Packet & Real IP Monitor Active".to_string(),
-            "[TUNNEL] Encrypted WireGuard Kernel link active (10.200.0.1 ↔ 10.200.0.2)".to_string(),
-            "[SCANNER] Actively monitoring /proc/net/tcp and /proc/net/nf_conntrack for player IPs"
-                .to_string(),
-        ]);
-
-        let mut last_sample_time = Instant::now();
-        let mut last_total_packets = read_kernel_packets("wg0");
-        let mut current_pps: u64 = 0;
-        let mut total_cumulative_packets: u64 = 0;
-        let mut active_connections: Vec<ClientConnection> = Vec::new();
+        let mut collector = TelemetryCollector::new("wg0");
 
         loop {
-            let elapsed = start_time.elapsed().as_secs();
+            // Collect real kernel telemetry strictly on tunnel wg0
+            let tele = collector.collect(&[]);
+            let elapsed = tele.uptime_seconds;
 
-            // Sample real kernel packets every 500ms
-            if last_sample_time.elapsed() >= Duration::from_millis(500) {
-                let dt = last_sample_time.elapsed().as_secs_f64();
-                let current_total_packets = read_kernel_packets("wg0");
-
-                if current_total_packets >= last_total_packets {
-                    let diff = current_total_packets - last_total_packets;
-                    current_pps = (diff as f64 / dt) as u64;
-                    total_cumulative_packets += diff;
-                } else {
-                    current_pps = 0;
-                }
-
-                last_total_packets = current_total_packets;
-                last_sample_time = Instant::now();
-
-                if packet_history.len() >= 50 {
-                    packet_history.pop_front();
-                }
-                packet_history.push_back(current_pps);
-
-                // Scan real player IPs from Linux Kernel TCP and Conntrack tables
-                let discovered_conns = scan_real_player_connections();
-                for conn in &discovered_conns {
-                    if !active_connections
-                        .iter()
-                        .any(|c| c.client_ip == conn.client_ip && c.client_port == conn.client_port)
-                    {
-                        let now = chrono_like_time(elapsed);
-                        if event_logs.len() >= 10 {
-                            event_logs.pop_front();
-                        }
-                        event_logs.push_back(format!(
-                            "[{}] PLAYER CONNECTED: IP {} (Port {}) ──► Minecraft:{}",
-                            now, conn.client_ip, conn.client_port, conn.game_port
-                        ));
-                    }
-                }
-                active_connections = discovered_conns;
-
-                // Also check if traffic is passing without specific TCP stream (e.g. UDP or Handshakes)
-                if current_pps > 0 && active_connections.is_empty() {
-                    let now = chrono_like_time(elapsed);
-                    if event_logs.len() >= 10 {
-                        event_logs.pop_front();
-                    }
-                    event_logs.push_back(format!(
-                        "[{}] TUNNEL PACKETS: {} pkts/sec passing through wg0",
-                        now, current_pps
-                    ));
-                }
-            }
-
-            let packet_data: Vec<u64> = packet_history.iter().copied().collect();
+            let packet_data: Vec<u64> = tele.traffic_history.clone();
 
             terminal.draw(|f| {
                 let size = f.size();
@@ -140,6 +65,18 @@ impl TuiDashboard {
                     .split(size);
 
                 // 1. Header Block
+                let status_style = if tele.status == "ONLINE" {
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                };
+
+                let status_text = if tele.status == "ONLINE" {
+                    "● LIVE KERNEL LINK (100% Online)"
+                } else {
+                    "● TUNNEL OFFLINE"
+                };
+
                 let title = Paragraph::new(vec![
                     Line::from(vec![
                         Span::styled(
@@ -152,19 +89,14 @@ impl TuiDashboard {
                     ]),
                     Line::from(vec![
                         Span::styled(" Status: ", Style::default().fg(Color::Gray)),
-                        Span::styled(
-                            "● LIVE KERNEL LINK (100% Online)",
-                            Style::default()
-                                .fg(Color::Green)
-                                .add_modifier(Modifier::BOLD),
-                        ),
+                        Span::styled(status_text, status_style),
                         Span::styled(
                             format!(
                                 "  │  Uptime: {:02}:{:02}:{:02}  │  Active Player Connections: {}",
                                 elapsed / 3600,
                                 (elapsed % 3600) / 60,
                                 elapsed % 60,
-                                active_connections.len()
+                                tele.active_players.len()
                             ),
                             Style::default()
                                 .fg(Color::Yellow)
@@ -189,9 +121,9 @@ impl TuiDashboard {
                 let sparkline = Sparkline::default()
                     .block(Block::default().borders(Borders::ALL).title(format!(
                         " Live Traffic: {} pkts/sec (Total: {}) ",
-                        current_pps, total_cumulative_packets
+                        tele.interface.current_pps, tele.interface.total_packets
                     )))
-                    .style(Style::default().fg(if current_pps > 0 {
+                    .style(Style::default().fg(if tele.interface.current_pps > 0 {
                         Color::Green
                     } else {
                         Color::Cyan
@@ -200,7 +132,6 @@ impl TuiDashboard {
                     .max(max_scale);
                 f.render_widget(sparkline, sub_chunks[0]);
 
-                let load_percent = ((current_pps as f64 / 200.0) * 100.0).min(100.0) as u16;
                 let gauge = Gauge::default()
                     .block(
                         Block::default()
@@ -208,7 +139,7 @@ impl TuiDashboard {
                             .title(" Tunnel Load Capacity "),
                     )
                     .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
-                    .percent(load_percent);
+                    .percent(tele.interface.load_percentage);
                 f.render_widget(gauge, sub_chunks[1]);
 
                 // 3. Protection Telemetry Stats
@@ -219,7 +150,7 @@ impl TuiDashboard {
                             Style::default().fg(Color::Yellow),
                         ),
                         Span::styled(
-                            "STANDARD (Hardware SYN Cookies + Per-IP Rate Limiter)",
+                            &tele.protection.shield_mode,
                             Style::default().fg(Color::Green),
                         ),
                     ]),
@@ -229,7 +160,10 @@ impl TuiDashboard {
                             Style::default().fg(Color::Yellow),
                         ),
                         Span::styled(
-                            "wg0 Kernel Fastpath (10.200.0.1 ↔ 10.200.0.2)",
+                            format!(
+                                "{} Kernel Fastpath (Conntrack: {} states)",
+                                tele.interface.name, tele.protection.conntrack_count
+                            ),
                             Style::default().fg(Color::Cyan),
                         ),
                     ]),
@@ -241,18 +175,18 @@ impl TuiDashboard {
                 );
                 f.render_widget(stats, chunks[2]);
 
-                // 4. Live Active Player Client IPs Table (Real IPs instead of placeholder names!)
-                let rows: Vec<Row> = if active_connections.is_empty() {
+                // 4. Live Active Player Client IPs Table (100% Real IPs)
+                let rows: Vec<Row> = if tele.active_players.is_empty() {
                     vec![Row::new(vec![
-                        "Waiting for players...".to_string(),
+                        format!("Waiting for incoming packets on {}...", tele.interface.name),
                         "-".to_string(),
-                        "25565 - 25700".to_string(),
+                        "Mapped Ports".to_string(),
                         "TCP / UDP".to_string(),
-                        "● LISTENING ON GATEWAY".to_string(),
+                        "● LISTENING ON FASTPATH".to_string(),
                     ])
                     .style(Style::default().fg(Color::DarkGray))]
                 } else {
-                    active_connections
+                    tele.active_players
                         .iter()
                         .map(|c| {
                             Row::new(vec![
@@ -298,22 +232,33 @@ impl TuiDashboard {
                 );
                 f.render_widget(table, chunks[3]);
 
-                // 5. Real-Time IP Connection Stream
-                let log_items: Vec<ListItem> = event_logs
-                    .iter()
-                    .map(|log| {
-                        let style = if log.contains("CONNECTED") || log.contains("INCOMING") {
-                            Style::default()
-                                .fg(Color::Green)
-                                .add_modifier(Modifier::BOLD)
-                        } else if log.contains("TUNNEL") {
-                            Style::default().fg(Color::Cyan)
-                        } else {
-                            Style::default().fg(Color::Yellow)
-                        };
-                        ListItem::new(Line::from(Span::styled(format!("  ▶ {}", log), style)))
-                    })
-                    .collect();
+                // 5. Real-Time Packet & IP Event Log
+                let log_items: Vec<ListItem> = if tele.packet_events.is_empty() {
+                    vec![ListItem::new(Line::from(Span::styled(
+                        "  ▶ [SYSTEM] WireNet Real-Time Packet Sniffer Active on wg0",
+                        Style::default().fg(Color::DarkGray),
+                    )))]
+                } else {
+                    tele.packet_events
+                        .iter()
+                        .map(|ev| {
+                            let style = if ev.event_type == "CONNECTED" {
+                                Style::default()
+                                    .fg(Color::Green)
+                                    .add_modifier(Modifier::BOLD)
+                            } else if ev.event_type == "TRAFFIC" {
+                                Style::default().fg(Color::Cyan)
+                            } else {
+                                Style::default().fg(Color::Yellow)
+                            };
+                            ListItem::new(Line::from(vec![
+                                Span::styled(format!("  ▶ [{}] ", ev.timestamp), Style::default().fg(Color::DarkGray)),
+                                Span::styled(format!("[{}] ", ev.event_type), style),
+                                Span::styled(&ev.message, Style::default().fg(Color::White)),
+                            ]))
+                        })
+                        .collect()
+                };
 
                 let list = List::new(log_items).block(
                     Block::default()
@@ -330,7 +275,7 @@ impl TuiDashboard {
                 f.render_widget(footer, chunks[5]);
             })?;
 
-            if event::poll(Duration::from_millis(100))? {
+            if event::poll(Duration::from_millis(500))? {
                 if let Event::Key(key) = event::read()? {
                     if key.code == KeyCode::Char('q')
                         || key.code == KeyCode::Char('Q')
@@ -342,170 +287,4 @@ impl TuiDashboard {
             }
         }
     }
-}
-
-/// Reads the real cumulative packet counter from Linux /proc/net/dev across wg0 and physical interfaces
-fn read_kernel_packets(iface: &str) -> u64 {
-    #[cfg(unix)]
-    {
-        if let Ok(content) = fs::read_to_string("/proc/net/dev") {
-            let mut total = 0u64;
-            for line in content.lines().skip(2) {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 11 {
-                    let name = parts[0].trim_end_matches(':');
-                    if name == iface
-                        || name.starts_with("wg")
-                        || name.starts_with("eth")
-                        || name.starts_with("ens")
-                        || name.starts_with("enp")
-                    {
-                        let rx_pkts = parts[2].parse::<u64>().unwrap_or(0);
-                        let tx_pkts = parts[10].parse::<u64>().unwrap_or(0);
-                        total += rx_pkts + tx_pkts;
-                    }
-                }
-            }
-            if total > 0 {
-                return total;
-            }
-        }
-
-        let rx_path = format!("/sys/class/net/{}/statistics/rx_packets", iface);
-        let tx_path = format!("/sys/class/net/{}/statistics/tx_packets", iface);
-
-        let rx = fs::read_to_string(&rx_path)
-            .ok()
-            .and_then(|s| s.trim().parse::<u64>().ok())
-            .unwrap_or(0);
-
-        let tx = fs::read_to_string(&tx_path)
-            .ok()
-            .and_then(|s| s.trim().parse::<u64>().ok())
-            .unwrap_or(0);
-
-        rx + tx
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = iface;
-        0
-    }
-}
-
-/// Scans real client/player source IPs connected to game ports from Linux Kernel /proc/net/tcp and /proc/net/nf_conntrack
-fn scan_real_player_connections() -> Vec<ClientConnection> {
-    #[allow(unused_mut)]
-    let mut conns = Vec::new();
-
-    #[cfg(unix)]
-    {
-        // 1. Scan /proc/net/tcp for active sockets
-        if let Ok(content) = fs::read_to_string("/proc/net/tcp") {
-            for line in content.lines().skip(1) {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 4 {
-                    let local_addr = parts[1];
-                    let rem_addr = parts[2];
-                    let state = parts[3];
-
-                    // State 01 = ESTABLISHED
-                    if state == "01" {
-                        if let Some((_l_ip, l_port)) = parse_hex_socket_addr(local_addr) {
-                            if (25565..=25700).contains(&l_port)
-                                || (30000..=30100).contains(&l_port)
-                            {
-                                if let Some((r_ip, r_port)) = parse_hex_socket_addr(rem_addr) {
-                                    if r_ip != "127.0.0.1" && !r_ip.starts_with("10.200.0.") {
-                                        conns.push(ClientConnection {
-                                            client_ip: r_ip,
-                                            client_port: r_port,
-                                            game_port: l_port,
-                                            protocol: "TCP".to_string(),
-                                            state: "● ACTIVE (0ms)".to_string(),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Scan /proc/net/nf_conntrack for NAT-forwarded player IPs
-        if let Ok(content) = fs::read_to_string("/proc/net/nf_conntrack") {
-            for line in content.lines() {
-                if (line.contains("dport=25565") || line.contains("dport=25566"))
-                    && line.contains("src=")
-                {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    let mut src_ip = "";
-                    let mut src_port = 0u16;
-                    let mut dst_port = 25565u16;
-
-                    for part in parts {
-                        if part.starts_with("src=") && src_ip.is_empty() {
-                            src_ip = part.trim_start_matches("src=");
-                        } else if part.starts_with("sport=") && src_port == 0 {
-                            src_port = part.trim_start_matches("sport=").parse().unwrap_or(0);
-                        } else if part.starts_with("dport=") {
-                            dst_port = part.trim_start_matches("dport=").parse().unwrap_or(25565);
-                        }
-                    }
-
-                    if !src_ip.is_empty()
-                        && src_ip != "127.0.0.1"
-                        && !src_ip.starts_with("10.200.0.")
-                    {
-                        if !conns
-                            .iter()
-                            .any(|c| c.client_ip == src_ip && c.client_port == src_port)
-                        {
-                            conns.push(ClientConnection {
-                                client_ip: src_ip.to_string(),
-                                client_port: src_port,
-                                game_port: dst_port,
-                                protocol: "TCP/NAT".to_string(),
-                                state: "● FORWARDED".to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    conns
-}
-
-#[cfg(unix)]
-fn parse_hex_socket_addr(hex_str: &str) -> Option<(String, u16)> {
-    let parts: Vec<&str> = hex_str.split(':').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-
-    let ip_hex = parts[0];
-    let port_hex = parts[1];
-
-    let port = u16::from_str_radix(port_hex, 16).ok()?;
-
-    if ip_hex.len() == 8 {
-        let b0 = u8::from_str_radix(&ip_hex[6..8], 16).ok()?;
-        let b1 = u8::from_str_radix(&ip_hex[4..6], 16).ok()?;
-        let b2 = u8::from_str_radix(&ip_hex[2..4], 16).ok()?;
-        let b3 = u8::from_str_radix(&ip_hex[0..2], 16).ok()?;
-        Some((format!("{}.{}.{}.{}", b0, b1, b2, b3), port))
-    } else {
-        None
-    }
-}
-
-fn chrono_like_time(total_secs: u64) -> String {
-    let hrs = (total_secs / 3600) % 24;
-    let mins = (total_secs % 3600) / 60;
-    let secs = total_secs % 60;
-    format!("{:02}:{:02}:{:02}", hrs, mins, secs)
 }
