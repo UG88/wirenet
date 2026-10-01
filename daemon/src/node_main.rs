@@ -111,12 +111,24 @@ async fn setup_node(
 
     // 1. Enable IP Forwarding, Route Localnet & Loose RP Filter
     println!("[1/5] Enabling Kernel IP Forwarding & Policy Routing sysctls...");
-    let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
-    let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.forwarding=1"]).output();
-    let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.route_localnet=1"]).output();
-    let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.route_localnet=1"]).output();
-    let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.rp_filter=2"]).output();
-    let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.default.rp_filter=2"]).output();
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.ipv4.ip_forward=1"])
+        .output();
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.ipv4.conf.all.forwarding=1"])
+        .output();
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.ipv4.conf.all.route_localnet=1"])
+        .output();
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.ipv4.conf.default.route_localnet=1"])
+        .output();
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.ipv4.conf.all.rp_filter=2"])
+        .output();
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.ipv4.conf.default.rp_filter=2"])
+        .output();
 
     // 2. Ensure /etc/wireguard and keys
     println!("[2/5] Generating/Verifying Node WireGuard cryptographic keys...");
@@ -157,22 +169,34 @@ async fn setup_node(
 
     // 4. Bring interface up
     println!("[4/5] Activating WireGuard interface wg0...");
-    let _ = Command::new("systemctl").args(["stop", "wg-quick@wg0"]).output();
-    let _ = Command::new("ip").args(["link", "del", "dev", "wg0"]).output();
+    let _ = Command::new("systemctl")
+        .args(["stop", "wg-quick@wg0"])
+        .output();
+    let _ = Command::new("ip")
+        .args(["link", "del", "dev", "wg0"])
+        .output();
     let up_res = Command::new("wg-quick").args(["up", "wg0"]).output();
     if let Ok(ref u) = up_res {
         if !u.status.success() {
-            println!("  [!] Notice: {}", String::from_utf8_lossy(&u.stderr).trim());
+            println!(
+                "  [!] Notice: {}",
+                String::from_utf8_lossy(&u.stderr).trim()
+            );
         }
     }
-    let _ = Command::new("systemctl").args(["enable", "--now", "wg-quick@wg0"]).output();
+    let _ = Command::new("systemctl")
+        .args(["enable", "--now", "wg-quick@wg0"])
+        .output();
 
     // 5. Scan Docker containers and reconcile routes
     println!("[5/5] Reconciling running Docker container game endpoints...");
     let watcher = DockerWatcher::new("/var/run/docker.sock".into());
     let active_ports = watcher.scan_active_ports().await.unwrap_or_default();
     let _ = NodeReconciler::reconcile_container_routes(virtual_ip, &active_ports);
-    println!("  [✓] Reconciled {} Docker container routes", active_ports.len());
+    println!(
+        "  [✓] Reconciled {} Docker container routes",
+        active_ports.len()
+    );
 
     println!("\n==========================================================");
     println!(" [✓] WireNet Pterodactyl Node Configured Successfully!");
@@ -202,7 +226,8 @@ async fn run_node_agent(virtual_ip: &str, docker_sock: &Path) -> Result<()> {
     let mut last_ports = Vec::new();
 
     // Ensure policy routing table 100 is configured
-    let _ = PolicyRoutingManager::setup_node_policy_routing(100, 0x1, 100, "wg0", Some("10.200.0.1"));
+    let _ =
+        PolicyRoutingManager::setup_node_policy_routing(100, 0x1, 100, "wg0", Some("10.200.0.1"));
 
     loop {
         match watcher.scan_active_ports().await {
@@ -223,7 +248,9 @@ async fn run_node_agent(virtual_ip: &str, docker_sock: &Path) -> Result<()> {
                             p.container_ip
                         );
                     }
-                    if let Err(e) = NodeReconciler::reconcile_container_routes(virtual_ip, &current_ports) {
+                    if let Err(e) =
+                        NodeReconciler::reconcile_container_routes(virtual_ip, &current_ports)
+                    {
                         warn!("Failed to reconcile container routes: {:?}", e);
                     }
                     last_ports = current_ports;
@@ -248,7 +275,10 @@ fn show_node_status() -> Result<()> {
     if iface.exists {
         println!(" [✓] Interface wg0       : UP");
         println!("     Total Packets       : {}", iface.total_packets);
-        println!("     Data Transferred    : RX {} bytes │ TX {} bytes", iface.rx_bytes, iface.tx_bytes);
+        println!(
+            "     Data Transferred    : RX {} bytes │ TX {} bytes",
+            iface.rx_bytes, iface.tx_bytes
+        );
     } else {
         println!(" [!] Interface wg0       : DOWN / NOT CONFIGURED");
         println!("     Run 'wirenet-node setup' to configure the tunnel.");
@@ -263,7 +293,14 @@ fn show_node_status() -> Result<()> {
             println!(" [✓] Gateway Peer        : {}", p.endpoint);
             println!("     Latest Handshake    : {}", p.latest_handshake_ago);
             println!("     Peer Allowed IPs    : {}", p.allowed_ips.join(", "));
-            println!("     Status              : {}", if p.is_online { "ONLINE (Active link)" } else { "Awaiting Handshake" });
+            println!(
+                "     Status              : {}",
+                if p.is_online {
+                    "ONLINE (Active link)"
+                } else {
+                    "Awaiting Handshake"
+                }
+            );
         }
     }
 
@@ -282,7 +319,10 @@ fn show_node_status() -> Result<()> {
     let players = telemetry::scan_real_connections(&[]);
     println!(" Active Player Sessions  : {}", players.len());
     for p in players {
-        println!("  → Real IP {}:{} ──► Port {} ({}) [{}]", p.client_ip, p.client_port, p.game_port, p.protocol, p.state);
+        println!(
+            "  → Real IP {}:{} ──► Port {} ({}) [{}]",
+            p.client_ip, p.client_port, p.game_port, p.protocol, p.state
+        );
     }
 
     println!("==========================================================");
@@ -300,7 +340,9 @@ fn run_node_doctor() -> Result<()> {
         println!(" [✓] Kernel IPv4 Forwarding : ENABLED");
     } else {
         println!(" [!] Kernel IPv4 Forwarding : DISABLED (Fixing...)");
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.ip_forward=1"]).output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.ip_forward=1"])
+            .output();
     }
 
     // Check 2: Route Localnet
@@ -309,11 +351,18 @@ fn run_node_doctor() -> Result<()> {
         println!(" [✓] Kernel Route Localnet  : ENABLED");
     } else {
         println!(" [!] Kernel Route Localnet  : DISABLED (Fixing...)");
-        let _ = Command::new("sysctl").args(["-w", "net.ipv4.conf.all.route_localnet=1"]).output();
+        let _ = Command::new("sysctl")
+            .args(["-w", "net.ipv4.conf.all.route_localnet=1"])
+            .output();
     }
 
     // Check 3: WireGuard Tools
-    if Command::new("which").arg("wg").output().map(|o| o.status.success()).unwrap_or(false) {
+    if Command::new("which")
+        .arg("wg")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
         println!(" [✓] WireGuard Toolchain    : INSTALLED");
     } else {
         println!(" [!] WireGuard Toolchain    : NOT FOUND (Run apt install wireguard-tools)");
@@ -329,7 +378,9 @@ fn run_node_doctor() -> Result<()> {
 
     // Check 5: Policy Routing Table 100
     let rule_out = Command::new("ip").args(["rule", "show"]).output();
-    let has_rule = rule_out.map(|o| String::from_utf8_lossy(&o.stdout).contains("100")).unwrap_or(false);
+    let has_rule = rule_out
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("100"))
+        .unwrap_or(false);
     if has_rule {
         println!(" [✓] Policy Routing Table100: CONFIGURED");
     } else {
@@ -356,7 +407,9 @@ fn install_node_service() -> Result<()> {
     fs::write("/etc/systemd/system/wirenet-node.service", unit)
         .context("writing /etc/systemd/system/wirenet-node.service")?;
     let _ = Command::new("systemctl").args(["daemon-reload"]).output();
-    let _ = Command::new("systemctl").args(["enable", "--now", "wirenet-node.service"]).output();
+    let _ = Command::new("systemctl")
+        .args(["enable", "--now", "wirenet-node.service"])
+        .output();
 
     println!("==========================================================");
     println!(" [✓] wirenet-node.service installed and started!");

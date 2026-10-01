@@ -155,6 +155,13 @@ impl DockerWatcher {
                             .and_then(|n| n.as_str())
                             .map(|s| s.trim_start_matches('/').to_string());
 
+                        let container_ip = c["NetworkSettings"]["Networks"]
+                            .as_object()
+                            .and_then(|nets| nets.values().next())
+                            .and_then(|net| net["IPAddress"].as_str())
+                            .filter(|ip| !ip.is_empty())
+                            .map(|s| s.to_string());
+
                         if let Some(ports) = c["Ports"].as_array() {
                             for p in ports {
                                 let public_port = p["PublicPort"].as_u64().unwrap_or(0) as u16;
@@ -168,7 +175,7 @@ impl DockerWatcher {
                                     mappings.push(PortMapping {
                                         port: public_port,
                                         protocol: proto,
-                                        container_ip: None,
+                                        container_ip: container_ip.clone(),
                                         container_port: private_port,
                                         server_name: name.clone(),
                                     });
@@ -183,18 +190,104 @@ impl DockerWatcher {
         Ok(mappings)
     }
 
+    /// ponytail: inspects authentic kernel listening sockets (/proc/net/tcp, /proc/net/udp) without fake/synthetic fallbacks
     async fn scan_listening_ports(&self) -> Vec<PortMapping> {
+        #[allow(unused_mut)]
         let mut mappings = Vec::new();
-        // Common default range
-        for port in [25565, 25566, 25567, 19132, 24454] {
-            mappings.push(PortMapping {
-                port,
-                protocol: ProtocolType::Both,
-                container_ip: None,
-                container_port: port,
-                server_name: Some("Pterodactyl Server".to_string()),
-            });
+        #[cfg(unix)]
+        {
+            // Inspect /proc/net/tcp for TCP_LISTEN (state 0A)
+            if let Ok(content) = std::fs::read_to_string("/proc/net/tcp") {
+                for line in content.lines().skip(1) {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 4 {
+                        let local_addr = parts[1];
+                        let state = parts[3];
+                        if state == "0A" {
+                            if let Some((_ip, port)) =
+                                crate::net::telemetry::parse_hex_socket_addr(local_addr)
+                            {
+                                if is_game_port(port)
+                                    && !mappings.iter().any(|m: &PortMapping| m.port == port)
+                                {
+                                    mappings.push(PortMapping {
+                                        port,
+                                        protocol: ProtocolType::Tcp,
+                                        container_ip: Some("127.0.0.1".to_string()),
+                                        container_port: port,
+                                        server_name: Some(format!("Host Game Service (:{})", port)),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Inspect /proc/net/udp for listening UDP sockets
+            if let Ok(content) = std::fs::read_to_string("/proc/net/udp") {
+                for line in content.lines().skip(1) {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let local_addr = parts[1];
+                        if let Some((_ip, port)) =
+                            crate::net::telemetry::parse_hex_socket_addr(local_addr)
+                        {
+                            if is_game_port(port) {
+                                if let Some(existing) = mappings.iter_mut().find(|m| m.port == port)
+                                {
+                                    existing.protocol = ProtocolType::Both;
+                                } else if !mappings.iter().any(|m: &PortMapping| m.port == port) {
+                                    mappings.push(PortMapping {
+                                        port,
+                                        protocol: ProtocolType::Udp,
+                                        container_ip: Some("127.0.0.1".to_string()),
+                                        container_port: port,
+                                        server_name: Some(format!("Host Game Service (:{})", port)),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         mappings
+    }
+}
+
+#[allow(dead_code)]
+fn is_game_port(port: u16) -> bool {
+    if port == 22
+        || port == 53
+        || port == 80
+        || port == 443
+        || port == 8080
+        || port == 9000
+        || port == 51820
+    {
+        return false;
+    }
+    (25565..=25700).contains(&port)
+        || port == 19132
+        || port == 24454
+        || (27015..=27020).contains(&port)
+        || (7777..=7780).contains(&port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_game_port() {
+        assert!(is_game_port(25565)); // Minecraft Java standard
+        assert!(is_game_port(19132)); // Bedrock standard
+        assert!(is_game_port(24454)); // Simple Voice Chat
+        assert!(is_game_port(27015)); // Source engine
+        assert!(!is_game_port(22)); // SSH
+        assert!(!is_game_port(80)); // HTTP
+        assert!(!is_game_port(51820)); // WireGuard
+        assert!(!is_game_port(9000)); // Control plane
     }
 }

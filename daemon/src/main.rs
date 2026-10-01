@@ -75,6 +75,16 @@ enum Commands {
         #[command(subcommand)]
         sub: ControllerCommands,
     },
+    /// Probe Minecraft server status via genuine SLP (Java) or RakNet (Bedrock)
+    Ping {
+        /// Target host or IP
+        #[arg(default_value = "127.0.0.1")]
+        host: String,
+
+        /// Target game port
+        #[arg(default_value_t = 25565)]
+        port: u16,
+    },
 }
 
 #[derive(Subcommand)]
@@ -516,7 +526,10 @@ async fn main() -> Result<()> {
                     dashboard_server::load_token(&token_file)?
                 } else {
                     let t = dashboard_server::create_token(&token_file)?;
-                    println!("Notice: Generated new secure dashboard token at: {}", token_file.display());
+                    println!(
+                        "Notice: Generated new secure dashboard token at: {}",
+                        token_file.display()
+                    );
                     t
                 };
                 let store = controller::Store::open(&database)?;
@@ -711,6 +724,30 @@ async fn main() -> Result<()> {
                 println!("Ban {id} removed.");
             }
         },
+        Some(Commands::Ping { host, port }) => {
+            println!("🔍 Probing Minecraft server at {host}:{port}...");
+            let status = wirenet_daemon::protocol::query_minecraft_status(&host, port).await;
+            if status.online {
+                println!("==========================================================");
+                println!(" ✓ Minecraft Server ONLINE ({})", status.edition);
+                println!(
+                    " Version: {} (Protocol {})",
+                    status.version_name, status.protocol_version
+                );
+                println!(
+                    " Players: {} / {}",
+                    status.online_players, status.max_players
+                );
+                println!(" Latency: {} ms", status.latency_ms);
+                println!(" MOTD:    {}", status.motd_clean);
+                if !status.player_sample.is_empty() {
+                    println!(" Sample:  {}", status.player_sample.join(", "));
+                }
+                println!("==========================================================");
+            } else {
+                println!(" ✗ Server at {host}:{port} is OFFLINE or unreachable.");
+            }
+        }
     }
 
     Ok(())

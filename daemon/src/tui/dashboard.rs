@@ -66,7 +66,9 @@ impl TuiDashboard {
 
                 // 1. Header Block
                 let status_style = if tele.status == "ONLINE" {
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
                 };
@@ -252,7 +254,10 @@ impl TuiDashboard {
                                 Style::default().fg(Color::Yellow)
                             };
                             ListItem::new(Line::from(vec![
-                                Span::styled(format!("  ▶ [{}] ", ev.timestamp), Style::default().fg(Color::DarkGray)),
+                                Span::styled(
+                                    format!("  ▶ [{}] ", ev.timestamp),
+                                    Style::default().fg(Color::DarkGray),
+                                ),
                                 Span::styled(format!("[{}] ", ev.event_type), style),
                                 Span::styled(&ev.message, Style::default().fg(Color::White)),
                             ]))

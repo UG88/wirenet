@@ -59,7 +59,11 @@ cd "${BUILD_DIR}/daemon"
 
 # 4. Install Global Binary
 echo "[4/4] Installing binary to /usr/local/bin/wirenet..."
-cp -f "${BUILD_DIR}/daemon/target/release/wirenet-daemon" /usr/local/bin/wirenet
+if [ -f "${BUILD_DIR}/daemon/target/release/wirenet" ]; then
+    cp -f "${BUILD_DIR}/daemon/target/release/wirenet" /usr/local/bin/wirenet
+else
+    cp -f "${BUILD_DIR}/daemon/target/release/wirenet-daemon" /usr/local/bin/wirenet
+fi
 chmod +x /usr/local/bin/wirenet
 rm -rf "${BUILD_DIR}"
 

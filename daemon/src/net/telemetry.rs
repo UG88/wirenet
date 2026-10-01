@@ -580,8 +580,7 @@ pub fn read_wireguard_peers(iface: &str) -> Vec<WireGuardPeerStats> {
 /// Reads kernel sysctls for Anti-DDoS protection
 pub fn read_protection_status() -> ProtectionStats {
     let syn_cookies = read_sysctl_u32("/proc/sys/net/ipv4/tcp_syncookies").unwrap_or(1) == 1;
-    let max_syn_backlog =
-        read_sysctl_u32("/proc/sys/net/ipv4/tcp_max_syn_backlog").unwrap_or(8192);
+    let max_syn_backlog = read_sysctl_u32("/proc/sys/net/ipv4/tcp_max_syn_backlog").unwrap_or(8192);
     let conntrack_count =
         read_sysctl_u64("/proc/sys/net/netfilter/nf_conntrack_count").unwrap_or(0);
     let conntrack_max =
@@ -625,6 +624,64 @@ fn current_time_string() -> String {
     format!("{:02}:{:02}:{:02}", hrs, mins, secs)
 }
 
+/// Drops an active connection at the kernel level using conntrack and ss
+pub fn drop_connection(client_ip: &str, client_port: u16, protocol: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let proto = protocol.to_lowercase();
+        let _ = Command::new("conntrack")
+            .args([
+                "-D",
+                "-p",
+                &proto,
+                "-s",
+                client_ip,
+                "--sport",
+                &client_port.to_string(),
+            ])
+            .output();
+
+        if proto == "tcp" {
+            let _ = Command::new("ss")
+                .args([
+                    "-K",
+                    "dst",
+                    client_ip,
+                    "dport",
+                    "=",
+                    &client_port.to_string(),
+                ])
+                .output();
+        }
+        return Ok(());
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (client_ip, client_port, protocol);
+        Ok(())
+    }
+}
+
+/// Sniffs a live sample of real packets passing through interface
+pub fn sniff_interface_packets(iface: &str, count: usize) -> Result<Vec<String>> {
+    #[cfg(unix)]
+    {
+        let count_str = count.min(50).to_string();
+        let out = Command::new("tcpdump")
+            .args(["-c", &count_str, "-nn", "-i", iface, "-t"])
+            .output();
+        if let Ok(o) = out {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let lines: Vec<String> = stdout.lines().map(|s| s.to_string()).collect();
+            if !lines.is_empty() {
+                return Ok(lines);
+            }
+        }
+    }
+    let _ = (iface, count);
+    Ok(Vec::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -652,10 +709,12 @@ mod tests {
 
     #[test]
     fn test_parse_conntrack_filters_internal_ips() {
-        let loopback = "ipv4 2 tcp 6 100 ESTABLISHED src=127.0.0.1 dst=127.0.0.1 sport=8080 dport=54000";
+        let loopback =
+            "ipv4 2 tcp 6 100 ESTABLISHED src=127.0.0.1 dst=127.0.0.1 sport=8080 dport=54000";
         assert!(parse_conntrack_entry(loopback).is_none());
 
-        let internal = "ipv4 2 tcp 6 100 ESTABLISHED src=10.200.0.1 dst=10.200.0.2 sport=51820 dport=51820";
+        let internal =
+            "ipv4 2 tcp 6 100 ESTABLISHED src=10.200.0.1 dst=10.200.0.2 sport=51820 dport=51820";
         assert!(parse_conntrack_entry(internal).is_none());
     }
 
