@@ -4,3 +4,16 @@ daemon/target/
 *.exe
 *.pdb
 *.rmeta
+
+# IDE & AI metadata
+.ai/
+.kilo/
+.idea/
+.vscode/
+
+# Local databases and tokens
+*.db
+*.db-wal
+*.db-shm
+*.token
+*.log
